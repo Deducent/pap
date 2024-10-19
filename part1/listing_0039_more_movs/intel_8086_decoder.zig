@@ -1,6 +1,6 @@
 const std = @import("std");
 pub fn main() !void {
-    var file = try std.fs.cwd().openFile("./listing_0038_many_register_mov", .{});
+    var file = try std.fs.cwd().openFile("./listing_0039_more_movs", .{});
     defer file.close();
 
     var buf_reader = std.io.bufferedReader(file.reader());
@@ -8,42 +8,28 @@ pub fn main() !void {
 
     const test_file = try std.fs.cwd().createFile("test.asm", .{ .read = true });
     defer test_file.close();
-    try test_file.writeAll("bits 16\n\n");
+
+    const writer = test_file.writer();
+    try writer.print("bits 16\n\n", .{});
 
     var buf: [2]u8 = undefined;
     while (try in_stream.read(&buf) > 0) {
         var instr: [3]u8 = undefined;
-        std.mem.copyForwards(u8, &instr, switch (buf[0] & 0b111111_00) {
-            0b100010_00 => "mov",
+        std.mem.copyForwards(u8, &instr, switch (buf[0] & 0b1111_0000) {
+            0b1011_0000 => "mov",
             else => unreachable,
         });
 
-        const d: u1 = if ((buf[0] & 0b000000_1_0) > 0) 1 else 0; // d = 0 REG-Field is source operand | d = 1 REG-Field is destination operand
-        const w: u1 = if ((buf[0] & 0b0000000_1) > 0) 1 else 0;
-
-        const mod: u2 = switch (buf[1] & 0b11_000000) {
-            0b00_000000 => 0b00,
-            0b01_000000 => 0b01,
-            0b10_000000 => 0b10,
-            0b11_000000 => 0b11,
-            else => unreachable,
-        };
-
-        _ = .{mod};
+        const w: u1 = if ((buf[0] & 0b0000_1_000) > 0) 1 else 0;
 
         var reg: [2]u8 = undefined;
-        copy_register_name(buf[1] >> 3, w, &reg);
+        copy_register_name(buf[0], w, &reg);
 
-        var r_m: [2]u8 = undefined;
-        copy_register_name(buf[1], w, &r_m);
+        std.debug.print("{s} {s}, {d}\n", .{ instr, reg, buf[1] });
 
-        std.debug.print("{s} {s}, {s}\n", if (d == 0) .{ instr, r_m, reg } else .{ instr, reg, r_m });
-
-        // mov <dest> <src>
-        try test_file.writeAll(if (d == 0)
-            instr ++ " " ++ r_m ++ ", " ++ reg ++ "\n"
-        else
-            instr ++ " " ++ reg ++ ", " ++ r_m ++ "\n");
+        const data = [1]u8{@bitCast(buf[1])};
+        std.debug.print("{any}\n", .{data});
+        try writer.print("{s} {s}, {d}\n", .{ instr, reg, buf[1] });
     }
 }
 
