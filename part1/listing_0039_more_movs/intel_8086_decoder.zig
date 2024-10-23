@@ -3,8 +3,11 @@ pub fn main() !void {
     var file = try std.fs.cwd().openFile("./listing_0039_more_movs", .{});
     defer file.close();
 
-    var buf_reader = std.io.bufferedReader(file.reader());
-    var in_stream = buf_reader.reader();
+    const reader = file.reader();
+    var buffer: [1024]u8 = [_]u8{undefined} ** 1024;
+    const file_size = try reader.readAll(&buffer);
+    const bytes = buffer[0..file_size];
+    std.debug.print("bytes : {b}\n", .{bytes});
 
     const test_file = try std.fs.cwd().createFile("test.asm", .{ .read = true });
     defer test_file.close();
@@ -12,24 +15,37 @@ pub fn main() !void {
     const writer = test_file.writer();
     try writer.print("bits 16\n\n", .{});
 
-    var buf: [2]u8 = undefined;
-    while (try in_stream.read(&buf) > 0) {
+    var i: u8 = 0;
+    while (i < file_size) {
+        const byte1 = bytes[i];
+        const byte2 = bytes[i + 1];
+        var byte3: u16 = undefined;
+
+        std.debug.print("buffer: {b}\n", .{bytes[i]});
         var instr: [3]u8 = undefined;
-        std.mem.copyForwards(u8, &instr, switch (buf[0] & 0b1111_0000) {
+
+        std.mem.copyForwards(u8, &instr, switch (byte1 & 0b1111_0000) {
             0b1011_0000 => "mov",
             else => unreachable,
         });
 
-        const w: u1 = if ((buf[0] & 0b0000_1_000) > 0) 1 else 0;
-
+        const w: u1 = if ((byte1 & 0b0000_1_000) > 0) 1 else 0;
+        std.debug.print("w: {any}\n", .{w});
         var reg: [2]u8 = undefined;
-        copy_register_name(buf[0], w, &reg);
+        copy_register_name(byte1, w, &reg);
 
-        std.debug.print("{s} {s}, {d}\n", .{ instr, reg, buf[1] });
+        var data: u16 = undefined;
 
-        const data = [1]u8{@bitCast(buf[1])};
-        std.debug.print("{any}\n", .{data});
-        try writer.print("{s} {s}, {d}\n", .{ instr, reg, buf[1] });
+        if (w == 1) {
+            byte3 = bytes[i + 2];
+            data = (byte3 << 8) | byte2;
+            i += 3;
+        } else {
+            data = byte2;
+            i += 2;
+        }
+        std.debug.print("{s} {s}, {d}\n", .{ instr, reg, data });
+        try writer.print("{s} {s}, {d}\n", .{ instr, reg, data });
     }
 }
 
