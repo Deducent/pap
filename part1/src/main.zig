@@ -105,20 +105,26 @@ fn mov_register_to_register(bytes: []u8, writer: std.fs.File.Writer) !void {
             else => unreachable,
         }
     }
+    const rm = std.mem.trim(u8, &r_m, &[_]u8{undefined});
+    std.debug.print("out: {any}\n", .{rm});
+    std.debug.print("mod: {b}\n", .{mod});
+    std.debug.print("reg: {s} len: {d}\n", .{ reg, reg.len });
+    std.debug.print("rm: {s} len: {d}\n", .{ r_m, r_m.len });
+    std.debug.print("{s} {s}, {s}\n", .{ "mov", r_m, reg });
 
     if (d == 0) {
         switch (mod) {
-            0b01 => try writer.print("{s} [{s} + {d}], {s} ", .{ "mov", r_m, disp_l, reg }),
-            0b10 => try writer.print("{s} [{s} + {d}], {s}", .{ "mov", r_m, ((disp_h << 8) | disp_l), reg }),
-            0b00 => try writer.print("{s} [{s}], {s}", .{ "mov", r_m, reg }),
-            0b11 => try writer.print("{s} {s}, {s}\n", .{ "mov", r_m, reg }),
+            0b01 => try writer.print("{s} [{s} + {d}], {s}\n", .{ "mov", rm, disp_l, reg }),
+            0b10 => try writer.print("{s} [{s} + {d}], {s}\n", .{ "mov", rm, ((disp_h << 8) | disp_l), reg }),
+            0b00 => try writer.print("{s} [{s}], {s}\n", .{ "mov", rm, reg }),
+            0b11 => try writer.print("{s} {s}, {s}\n", .{ "mov", rm, reg }),
         }
     } else {
         switch (mod) {
-            0b01 => try writer.print("{s} {s}, [{s} + {d}] ", .{ "mov", reg, r_m, disp_l }),
-            0b10 => try writer.print("{s} {s}, [{s} + {d}]", .{ "mov", reg, r_m, ((disp_h << 8) | disp_l) }),
-            0b00 => try writer.print("{s} {s}, [{s}]", .{ "mov", reg, r_m }),
-            0b11 => try writer.print("{s} {s}, {s}\n", .{ "mov", reg, r_m }),
+            0b01 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ "mov", reg, rm, disp_l }),
+            0b10 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ "mov", reg, rm, ((disp_h << 8) | disp_l) }),
+            0b00 => try writer.print("{s} {s}, [{s}]\n", .{ "mov", reg, rm }),
+            0b11 => try writer.print("{s} {s}, {s}\n", .{ "mov", reg, rm }),
         }
     }
 }

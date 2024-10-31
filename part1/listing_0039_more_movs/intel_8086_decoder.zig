@@ -86,7 +86,7 @@ fn mov_register_to_register(bytes: []u8, writer: std.fs.File.Writer) !void {
             0b00_000_111 => "bx",
             else => unreachable,
         });
-        std.debug.print("rm: {s}", .{r_m});
+        std.debug.print("rm: {s}\n", .{r_m});
 
         // _ = switch (mod) {
         //     0b01 => try std.fmt.bufPrint(&r_m, "[{s} + {d}]\n", .{ r_m, disp_l }),
