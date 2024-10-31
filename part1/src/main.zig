@@ -106,11 +106,6 @@ fn mov_register_to_register(bytes: []u8, writer: std.fs.File.Writer) !void {
         }
     }
     const rm = std.mem.trim(u8, &r_m, &[_]u8{undefined});
-    std.debug.print("out: {any}\n", .{rm});
-    std.debug.print("mod: {b}\n", .{mod});
-    std.debug.print("reg: {s} len: {d}\n", .{ reg, reg.len });
-    std.debug.print("rm: {s} len: {d}\n", .{ r_m, r_m.len });
-    std.debug.print("{s} {s}, {s}\n", .{ "mov", r_m, reg });
 
     if (d == 0) {
         switch (mod) {
