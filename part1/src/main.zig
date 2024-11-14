@@ -24,12 +24,15 @@ pub fn main() !void {
     const writer = test_file.writer();
     try writer.print("bits 16\n\n", .{});
 
+    std.debug.print("bytes: {b}\n", .{bytes});
     while (i < file_size) {
-        if (bytes[i] & 0b111111_00 == 0b100010_00) {
-            try mov_register_to_register(bytes, writer); // reg -> reg
-        } else if (bytes[i] & 0b1111_0000 == 0b1011_0000) {
-            try mov_immediate(bytes, writer); // im -> reg
-        } else unreachable;
+        switch (bytes[i] & 0b111111_00) {
+            0b1011_0000 => try mov_immediate(bytes, writer), // im -> reg
+            0b100010_00 => try pattern_register_to_register(bytes, writer, "mov"), // reg -> reg
+            0b000000_00 => try pattern_register_to_register(bytes, writer, "add"), // reg -> reg
+            0b100000_00 => try pattern_immediate_register_memory(bytes, writer), // reg -> memory
+            else => unreachable,
+        }
     }
 }
 
@@ -56,7 +59,7 @@ fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer) !void {
     try writer.print("{s} {s}, {d}\n", .{ "mov", reg, data });
 }
 
-fn mov_register_to_register(bytes: []u8, writer: std.fs.File.Writer) !void {
+fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
 
@@ -66,13 +69,7 @@ fn mov_register_to_register(bytes: []u8, writer: std.fs.File.Writer) !void {
     const d: u1 = if ((byte1 & 0b000000_1_0) > 0) 1 else 0; // d = 0 REG-Field is source operand | d = 1 REG-Field is destination operand
     const w: u1 = if ((byte1 & 0b0000000_1) > 0) 1 else 0;
 
-    const mod: u2 = switch (byte2 & 0b11_000000) {
-        0b00_000000 => 0b00,
-        0b01_000000 => 0b01,
-        0b10_000000 => 0b10,
-        0b11_000000 => 0b11,
-        else => unreachable,
-    };
+    const mod: u2 = get_mod_field(byte2);
 
     var reg: [2]u8 = undefined;
     var r_m: [7]u8 = [_]u8{undefined} ** 7;
@@ -86,17 +83,7 @@ fn mov_register_to_register(bytes: []u8, writer: std.fs.File.Writer) !void {
         if (bytes.len > (i + 2)) disp_l = bytes[i + 2];
         if (bytes.len > (i + 3)) disp_h = bytes[i + 3];
 
-        std.mem.copyForwards(u8, &r_m, switch (byte2 & 0b00_000_111) {
-            0b00_000_000 => "bx + si",
-            0b00_000_001 => "bx + di",
-            0b00_000_010 => "bp + si",
-            0b00_000_011 => "bp + di",
-            0b00_000_100 => "si",
-            0b00_000_101 => "di",
-            0b00_000_110 => if (mod == 0b00) "75" else "bp", // FIXME: What is direct address
-            0b00_000_111 => "bx",
-            else => unreachable,
-        });
+        copy_effective_address_calc(byte2, &r_m, mod);
 
         switch (mod) {
             0b01 => i += 3,
@@ -109,45 +96,99 @@ fn mov_register_to_register(bytes: []u8, writer: std.fs.File.Writer) !void {
 
     if (d == 0) {
         switch (mod) {
-            0b01 => try writer.print("{s} [{s} + {d}], {s}\n", .{ "mov", rm, disp_l, reg }),
-            0b10 => try writer.print("{s} [{s} + {d}], {s}\n", .{ "mov", rm, ((disp_h << 8) | disp_l), reg }),
-            0b00 => try writer.print("{s} [{s}], {s}\n", .{ "mov", rm, reg }),
-            0b11 => try writer.print("{s} {s}, {s}\n", .{ "mov", rm, reg }),
+            0b01 => try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, rm, disp_l, reg }),
+            0b10 => try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, rm, ((disp_h << 8) | disp_l), reg }),
+            0b00 => try writer.print("{s} [{s}], {s}\n", .{ instr_type, rm, reg }),
+            0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, rm, reg }),
         }
     } else {
         switch (mod) {
-            0b01 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ "mov", reg, rm, disp_l }),
-            0b10 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ "mov", reg, rm, ((disp_h << 8) | disp_l) }),
-            0b00 => try writer.print("{s} {s}, [{s}]\n", .{ "mov", reg, rm }),
-            0b11 => try writer.print("{s} {s}, {s}\n", .{ "mov", reg, rm }),
+            0b01 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, reg, rm, disp_l }),
+            0b10 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, reg, rm, ((disp_h << 8) | disp_l) }),
+            0b00 => try writer.print("{s} {s}, [{s}]\n", .{ instr_type, reg, rm }),
+            0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, reg, rm }),
         }
     }
 }
 
-fn copy_register_name(addr: u8, w: u1, dest: *[2]u8) void {
-    if (w == 0) {
-        std.mem.copyForwards(u8, &dest.*, switch (addr & 0b00_000_111) {
-            0b00_000_000 => "al",
-            0b00_000_001 => "cl",
-            0b00_000_010 => "dl",
-            0b00_000_011 => "bl",
-            0b00_000_100 => "ah",
-            0b00_000_101 => "ch",
-            0b00_000_110 => "dh",
-            0b00_000_111 => "bh",
-            else => unreachable,
-        });
+fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !void {
+    const byte1 = bytes[i];
+    const byte2 = bytes[i + 1];
+    const byte3 = bytes[i + 2];
+    const s: u1 = if ((byte1 & 0b000000_1_0) > 0) 1 else 0;
+    const w: u1 = if ((byte1 & 0b0000000_1) > 0) 1 else 0;
+    var disp_l: u8 = undefined;
+    const disp_h: u16 = undefined;
+    var byte_word: [4]u8 = [_]u8{0} ** 4;
+
+    var r_m: [7]u8 = [_]u8{undefined} ** 7;
+
+    const mod: u2 = get_mod_field(byte2);
+
+    const instr = switch (byte2 & 0b00_111_000) {
+        0b00_000_000 => "add",
+        0b00_101_000 => "sub",
+        0b00_111_000 => "cmp",
+        else => unreachable,
+    };
+    if (mod == 0b11) {
+        copy_register_name(byte2, w, r_m[0..2]);
     } else {
-        std.mem.copyForwards(u8, &dest.*, switch (addr & 0b00_000_111) {
-            0b00_000_000 => "ax",
-            0b00_000_001 => "cx",
-            0b00_000_010 => "dx",
-            0b00_000_011 => "bx",
-            0b00_000_100 => "sp",
-            0b00_000_101 => "bp",
-            0b00_000_110 => "si",
-            0b00_000_111 => "di",
-            else => unreachable,
+        if (mod == 0b01) {
+            disp_l = byte3;
+        }
+        copy_effective_address_calc(byte2, &r_m, mod);
+        std.mem.copyForwards(u8, &byte_word, switch (w) {
+            1 => "word",
+            0 => "byte",
         });
     }
+    const rm = std.mem.trim(u8, &r_m, &[_]u8{undefined});
+    _ = .{ s, w };
+
+    switch (mod) {
+        0b01 => try writer.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, byte_word, rm, disp_l, byte3 }),
+        0b10 => try writer.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, byte_word, rm, ((disp_h << 8) | disp_l), byte3 }),
+        0b00 => try writer.print("{s} {s} [{s}], {d}\n", .{ instr, byte_word, rm, byte3 }),
+        0b11 => try writer.print("{s} {s}, {d}\n", .{ instr, rm, byte3 }),
+    }
+    i += 3;
+}
+
+fn copy_register_name(addr: u8, w: u1, dest: *[2]u8) void {
+    std.mem.copyForwards(u8, &dest.*, switch (addr & 0b00_000_111) {
+        0b00_000_000 => if (w == 0) "al" else "ax",
+        0b00_000_001 => if (w == 0) "cl" else "cx",
+        0b00_000_010 => if (w == 0) "dl" else "dx",
+        0b00_000_011 => if (w == 0) "bl" else "bx",
+        0b00_000_100 => if (w == 0) "ah" else "sp",
+        0b00_000_101 => if (w == 0) "ch" else "bp",
+        0b00_000_110 => if (w == 0) "dh" else "si",
+        0b00_000_111 => if (w == 0) "bh" else "di",
+        else => unreachable,
+    });
+}
+
+fn copy_effective_address_calc(addr: u8, dest: *[7]u8, mod: u2) void {
+    std.mem.copyForwards(u8, &dest.*, switch (addr & 0b00_000_111) {
+        0b00_000_000 => "bx + si",
+        0b00_000_001 => "bx + di",
+        0b00_000_010 => "bp + si",
+        0b00_000_011 => "bp + di",
+        0b00_000_100 => "si",
+        0b00_000_101 => "di",
+        0b00_000_110 => if (mod == 0b00) "75" else "bp", // FIXME: What is direct address
+        0b00_000_111 => "bx",
+        else => unreachable,
+    });
+}
+
+fn get_mod_field(byte: u8) u2 {
+    return switch (byte & 0b11_000000) {
+        0b00_000000 => 0b00,
+        0b01_000000 => 0b01,
+        0b10_000000 => 0b10,
+        0b11_000000 => 0b11,
+        else => unreachable,
+    };
 }
