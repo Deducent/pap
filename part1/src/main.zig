@@ -1,5 +1,71 @@
 const std = @import("std");
 var i: u8 = 0;
+
+const assembly = struct {
+    byte_count: u32 = undefined,
+    r_m: []const u8 = undefined,
+    reg: []const u8 = undefined,
+    byte_word: []const u8 = undefined,
+    data: ?u16 = null,
+    disp_h: u16 = undefined,
+    disp_l: u8 = undefined,
+    mod: u2 = undefined,
+    d: u1 = undefined,
+    s: u1 = undefined,
+    w: u1 = undefined,
+
+    fn set_byte_word(self: *assembly) void {
+        self.byte_word = switch (self.w) {
+            1 => "word",
+            0 => "byte",
+        };
+    }
+
+    fn set_effective_address_calc(self: *assembly, addr: u8, bytes: []u8) !void {
+        switch (addr & 0b00_000_111) {
+            0b00_000_000 => self.r_m = "bx + si",
+            0b00_000_001 => self.r_m = "bx + di",
+            0b00_000_010 => self.r_m = "bp + si",
+            0b00_000_011 => self.r_m = "bp + di",
+            0b00_000_100 => self.r_m = "si",
+            0b00_000_101 => self.r_m = "di",
+            0b00_000_110 => if (self.mod == 0b00) {
+                const byte4: u16 = bytes[i + 3];
+                const value: u16 = (byte4 << 8) | bytes[i + 2];
+                var buffer: [1024]u8 = [_]u8{undefined} ** 1024;
+                self.r_m = try std.fmt.bufPrint(&buffer, "{d}", .{value});
+                std.debug.print("r_m: {s}\n", .{self.r_m});
+
+                if (self.w == 1 and self.s == 0) {
+                    self.data = bytes[i + 5];
+                    self.data = (self.data.? << 8) | bytes[i + 4];
+                    i += 6;
+                } else {
+                    self.data = bytes[i + 4];
+                    i += 5;
+                }
+            } else {
+                self.r_m = "bp";
+            },
+            0b00_000_111 => self.r_m = "bx",
+            else => unreachable,
+        }
+    }
+
+    fn set_register_name(self: assembly, addr: u8, dest: *[]const u8) void {
+        dest.* = switch (addr & 0b00_000_111) {
+            0b00_000_000 => if (self.w == 0) "al" else "ax",
+            0b00_000_001 => if (self.w == 0) "cl" else "cx",
+            0b00_000_010 => if (self.w == 0) "dl" else "dx",
+            0b00_000_011 => if (self.w == 0) "bl" else "bx",
+            0b00_000_100 => if (self.w == 0) "ah" else "sp",
+            0b00_000_101 => if (self.w == 0) "ch" else "bp",
+            0b00_000_110 => if (self.w == 0) "dh" else "si",
+            0b00_000_111 => if (self.w == 0) "bh" else "di",
+            else => unreachable,
+        };
+    }
+};
 pub fn main() !void {
     // var args = std.process.args();
     // defer args.deinit();
@@ -44,92 +110,83 @@ pub fn main() !void {
 }
 
 fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer) !void {
+    var a: assembly = assembly{};
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
     var byte3: u16 = undefined;
 
-    const w: u1 = if ((byte1 & 0b0000_1_000) > 0) 1 else 0;
-    // std.debug.print("w: {any}\n", .{w});
-    var reg: [2]u8 = undefined;
-    copy_register_name(byte1, w, &reg);
+    a.w = if ((byte1 & 0b0000_1_000) > 0) 1 else 0;
+    a.set_register_name(byte1, &a.reg);
 
-    var data: u16 = undefined;
-
-    if (w == 1) {
+    if (a.w == 1) {
         byte3 = bytes[i + 2];
-        data = (byte3 << 8) | byte2;
+        a.data = (byte3 << 8) | byte2;
         i += 3;
     } else {
-        data = byte2;
+        a.data = byte2;
         i += 2;
     }
-    std.debug.print("{s} {s}, {d}\n", .{ "mov", reg, data });
-    try writer.print("{s} {s}, {d}\n", .{ "mov", reg, data });
+    std.debug.print("{s} {s}, {d}\n", .{ "mov", a.reg, a.data.? });
+    try writer.print("{s} {s}, {d}\n", .{ "mov", a.reg, a.data.? });
 }
 
 fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8) !void {
+    var a: assembly = assembly{};
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
 
-    var disp_l: u8 = undefined;
-    var disp_h: u16 = undefined;
+    a.d = if ((byte1 & 0b000000_1_0) > 0) 1 else 0; // d = 0 REG-Field is source operand | d = 1 REG-Field is destination operand
+    a.w = if ((byte1 & 0b0000000_1) > 0) 1 else 0;
 
-    const d: u1 = if ((byte1 & 0b000000_1_0) > 0) 1 else 0; // d = 0 REG-Field is source operand | d = 1 REG-Field is destination operand
-    const w: u1 = if ((byte1 & 0b0000000_1) > 0) 1 else 0;
+    a.mod = get_mod_field(byte2);
 
-    const mod: u2 = get_mod_field(byte2);
+    a.set_register_name(byte2 >> 3, &a.reg);
 
-    var reg: [2]u8 = undefined;
-    var r_m: [7]u8 = [_]u8{undefined} ** 7;
-
-    copy_register_name(byte2 >> 3, w, &reg);
-
-    if (mod == 0b11) {
-        copy_register_name(byte2, w, r_m[0..2]);
+    if (a.mod == 0b11) {
+        a.set_register_name(byte2, &a.r_m);
         i += 2;
     } else {
-        if (bytes.len > (i + 2)) disp_l = bytes[i + 2];
-        if (bytes.len > (i + 3)) disp_h = bytes[i + 3];
+        if (bytes.len > (i + 2)) a.disp_l = bytes[i + 2];
+        if (bytes.len > (i + 3)) a.disp_h = bytes[i + 3];
 
-        copy_effective_address_calc(byte2, &r_m, mod);
+        try a.set_effective_address_calc(byte2, bytes);
 
-        switch (mod) {
+        switch (a.mod) {
             0b01 => i += 3,
             0b10 => i += 4,
             0b00 => i += 2,
             else => unreachable,
         }
     }
-    const rm = std.mem.trim(u8, &r_m, &[_]u8{undefined});
 
-    if (d == 0) {
-        switch (mod) {
-            0b01 => std.debug.print("{s} [{s} + {d}], {s}\n", .{ instr_type, rm, disp_l, reg }),
-            0b10 => std.debug.print("{s} [{s} + {d}], {s}\n", .{ instr_type, rm, ((disp_h << 8) | disp_l), reg }),
-            0b00 => std.debug.print("{s} [{s}], {s}\n", .{ instr_type, rm, reg }),
-            0b11 => std.debug.print("{s} {s}, {s}\n", .{ instr_type, rm, reg }),
+    if (a.d == 0) {
+        switch (a.mod) {
+            0b01 => std.debug.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, a.disp_l, a.reg }),
+            0b10 => std.debug.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, ((a.disp_h << 8) | a.disp_l), a.reg }),
+            0b00 => std.debug.print("{s} [{s}], {s}\n", .{ instr_type, a.r_m, a.reg }),
+            0b11 => std.debug.print("{s} {s}, {s}\n", .{ instr_type, a.r_m, a.reg }),
         }
     } else {
-        switch (mod) {
-            0b01 => std.debug.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, reg, rm, disp_l }),
-            0b10 => std.debug.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, reg, rm, ((disp_h << 8) | disp_l) }),
-            0b00 => std.debug.print("{s} {s}, [{s}]\n", .{ instr_type, reg, rm }),
-            0b11 => std.debug.print("{s} {s}, {s}\n", .{ instr_type, reg, rm }),
+        switch (a.mod) {
+            0b01 => std.debug.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, a.disp_l }),
+            0b10 => std.debug.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, ((a.disp_h << 8) | a.disp_l) }),
+            0b00 => std.debug.print("{s} {s}, [{s}]\n", .{ instr_type, a.reg, a.r_m }),
+            0b11 => std.debug.print("{s} {s}, {s}\n", .{ instr_type, a.reg, a.r_m }),
         }
     }
-    if (d == 0) {
-        switch (mod) {
-            0b01 => try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, rm, disp_l, reg }),
-            0b10 => try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, rm, ((disp_h << 8) | disp_l), reg }),
-            0b00 => try writer.print("{s} [{s}], {s}\n", .{ instr_type, rm, reg }),
-            0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, rm, reg }),
+    if (a.d == 0) {
+        switch (a.mod) {
+            0b01 => try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, a.disp_l, a.reg }),
+            0b10 => try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, ((a.disp_h << 8) | a.disp_l), a.reg }),
+            0b00 => try writer.print("{s} [{s}], {s}\n", .{ instr_type, a.r_m, a.reg }),
+            0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, a.r_m, a.reg }),
         }
     } else {
-        switch (mod) {
-            0b01 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, reg, rm, disp_l }),
-            0b10 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, reg, rm, ((disp_h << 8) | disp_l) }),
-            0b00 => try writer.print("{s} {s}, [{s}]\n", .{ instr_type, reg, rm }),
-            0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, reg, rm }),
+        switch (a.mod) {
+            0b01 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, a.disp_l }),
+            0b10 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, ((a.disp_h << 8) | a.disp_l) }),
+            0b00 => try writer.print("{s} {s}, [{s}]\n", .{ instr_type, a.reg, a.r_m }),
+            0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, a.reg, a.r_m }),
         }
     }
 }
@@ -137,16 +194,11 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
 fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
-    const s: u1 = if ((byte1 & 0b000000_1_0) > 0) 1 else 0;
-    const w: u1 = if ((byte1 & 0b0000000_1) > 0) 1 else 0;
-    var disp_l: u8 = undefined;
-    var disp_h: u16 = undefined;
-    var data: u16 = undefined;
-    var byte_word: [4]u8 = [_]u8{0} ** 4;
-
-    var r_m: [7]u8 = [_]u8{undefined} ** 7;
-
-    const mod: u2 = get_mod_field(byte2);
+    var a: assembly = assembly{
+        .s = if ((byte1 & 0b000000_1_0) > 0) 1 else 0,
+        .w = if ((byte1 & 0b0000000_1) > 0) 1 else 0,
+        .mod = get_mod_field(byte2),
+    };
 
     const instr = switch (byte2 & 0b00_111_000) {
         0b00_000_000 => "add",
@@ -154,89 +206,70 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
         0b00_111_000 => "cmp",
         else => unreachable,
     };
-    switch (mod) {
+    switch (a.mod) {
         0b11 => {
-            copy_register_name(byte2, w, r_m[0..2]);
-            if (w == 1 and s == 0) {
-                data = (bytes[i + 2] << 7) | bytes[i + 3];
+            a.set_register_name(byte2, &a.r_m);
+            if (a.w == 1 and a.s == 0) {
+                a.data = (bytes[i + 2] << 7) | bytes[i + 3];
                 i += 4;
             } else {
-                data = bytes[i + 2];
+                a.data = bytes[i + 2];
                 i += 3;
             }
         },
         0b01 => {
-            disp_l = bytes[i + 2];
-            if (w == 1 and s == 0) {
-                data = (bytes[i + 3] << 7) | bytes[i + 4];
+            a.disp_l = bytes[i + 2];
+            if (a.w == 1 and a.s == 0) {
+                a.data = (bytes[i + 3] << 7) | bytes[i + 4];
                 i += 5;
             } else {
-                data = bytes[i + 3];
+                a.data = bytes[i + 3];
                 i += 4;
             }
-            copy_effective_address_calc(byte2, &r_m, mod);
-            std.mem.copyForwards(u8, &byte_word, switch (w) {
-                1 => "word",
-                0 => "byte",
-            });
+            try a.set_effective_address_calc(byte2, bytes);
+            a.set_byte_word();
         },
         0b10 => {
-            disp_l = bytes[i + 2];
-            disp_h = bytes[i + 3];
-            if (w == 1 and s == 0) {
-                data = (bytes[i + 4] << 7) | bytes[i + 5];
+            a.disp_l = bytes[i + 2];
+            a.disp_h = bytes[i + 3];
+            if (a.w == 1 and a.s == 0) {
+                a.data = (bytes[i + 4] << 7) | bytes[i + 5];
                 i += 6;
             } else {
-                data = bytes[i + 4];
+                a.data = bytes[i + 4];
                 i += 5;
             }
-            copy_effective_address_calc(byte2, &r_m, mod);
-            std.mem.copyForwards(u8, &byte_word, switch (w) {
-                1 => "word",
-                0 => "byte",
-            });
+            try a.set_effective_address_calc(byte2, bytes);
+            a.set_byte_word();
         },
         0b00 => {
-            std.mem.copyForwards(u8, &r_m, switch (byte2 & 0b00_000_111) {
-                0b00_000_000 => "bx + si",
-                0b00_000_001 => "bx + di",
-                0b00_000_010 => "bp + si",
-                0b00_000_011 => "bp + di",
-                0b00_000_100 => "si",
-                0b00_000_101 => "di",
-                0b00_000_110 => if (mod == 0b00) {
-                    try std.fmt.bufPrint(&r_m, "{d}", (bytes[i + 2] << 7) | bytes[i + 3]);
-                } else "bp", // FIXME: What is direct address
-                0b00_000_111 => "bx",
-                else => unreachable,
-            });
-            // copy_effective_address_calc(byte2, &r_m, mod);
-            std.mem.copyForwards(u8, &byte_word, switch (w) {
-                1 => "word",
-                0 => "byte",
-            });
-            if (w == 1 and s == 0) {
-                data = (bytes[i + 2] << 7) | bytes[i + 3];
+            try a.set_effective_address_calc(byte2, bytes);
+            a.set_byte_word();
+            if (a.w == 1 and a.s == 0) {
+                a.data = (bytes[i + 3] << 7) | bytes[i + 2];
                 i += 4;
             } else {
-                data = bytes[i + 2];
-                i += 3;
+                if (a.data == null) {
+                    a.data = bytes[i + 2];
+                    i += 3;
+                }
             }
         },
     }
-    const rm = std.mem.trim(u8, &r_m, &[_]u8{undefined});
 
-    switch (mod) {
-        0b01 => std.debug.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, byte_word, rm, disp_l, data }),
-        0b10 => std.debug.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, byte_word, rm, ((disp_h << 8) | disp_l), data }),
-        0b00 => std.debug.print("{s} {s} [{s}], {d}\n", .{ instr, byte_word, rm, data }),
-        0b11 => std.debug.print("{s} {s}, {d}\n", .{ instr, rm, data }),
+    std.debug.print("r_m outer : {s}\n", .{a.r_m});
+
+    switch (a.mod) {
+        0b01 => std.debug.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, a.byte_word, a.r_m, a.disp_l, a.data.? }),
+        0b10 => std.debug.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, a.byte_word, a.r_m, ((a.disp_h << 8) | a.disp_l), a.data.? }),
+        0b00 => std.debug.print("{s} {s} [{s}], {d}\n", .{ instr, a.byte_word, a.r_m, a.data.? }),
+        0b11 => std.debug.print("{s} {s}, {d}\n", .{ instr, a.r_m, a.data.? }),
     }
-    switch (mod) {
-        0b01 => try writer.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, byte_word, rm, disp_l, data }),
-        0b10 => try writer.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, byte_word, rm, ((disp_h << 8) | disp_l), data }),
-        0b00 => try writer.print("{s} {s} [{s}], {d}\n", .{ instr, byte_word, rm, data }),
-        0b11 => try writer.print("{s} {s}, {d}\n", .{ instr, rm, data }),
+    switch (a.mod) {
+        0b01 => try writer.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, a.byte_word, a.r_m, a.disp_l, a.data.? }),
+        0b10 => try writer.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, a.byte_word, a.r_m, ((a.disp_h << 8) | a.disp_l), a.data.? }),
+        0b00 => try writer.print("{s} {s} [{s}], {d}\n", .{ instr, a.byte_word, a.r_m, a.data.? }),
+        0b11 => try writer.print("{s} {s}, {d}\n", .{ instr, a.r_m, a.data.? }),
     }
 }
 
@@ -244,53 +277,22 @@ fn pattern_immediate_from_accumalator(bytes: []u8, writer: std.fs.File.Writer, i
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
     var byte3: u16 = undefined;
+    var a = assembly{
+        .w = if ((byte1 & 0b0000000_1) > 0) 1 else 0,
+    };
 
-    const w: u1 = if ((byte1 & 0b0000000_1) > 0) 1 else 0;
-
-    var data: u16 = undefined;
-
-    var reg: []const u8 = undefined;
-
-    if (w == 1) {
-        reg = "ax";
+    if (a.w == 1) {
+        a.reg = "ax";
         byte3 = bytes[i + 2];
-        data = (byte3 << 8) | byte2;
+        a.data = (byte3 << 8) | byte2;
         i += 3;
     } else {
-        reg = "al";
-        data = byte2;
+        a.reg = "al";
+        a.data = byte2;
         i += 2;
     }
-    std.debug.print("{s} {s}, {d}\n", .{ instr_type, reg, data });
-    try writer.print("{s} {s}, {d}\n", .{ instr_type, reg, data });
-}
-
-fn copy_register_name(addr: u8, w: u1, dest: *[2]u8) void {
-    std.mem.copyForwards(u8, &dest.*, switch (addr & 0b00_000_111) {
-        0b00_000_000 => if (w == 0) "al" else "ax",
-        0b00_000_001 => if (w == 0) "cl" else "cx",
-        0b00_000_010 => if (w == 0) "dl" else "dx",
-        0b00_000_011 => if (w == 0) "bl" else "bx",
-        0b00_000_100 => if (w == 0) "ah" else "sp",
-        0b00_000_101 => if (w == 0) "ch" else "bp",
-        0b00_000_110 => if (w == 0) "dh" else "si",
-        0b00_000_111 => if (w == 0) "bh" else "di",
-        else => unreachable,
-    });
-}
-
-fn copy_effective_address_calc(addr: u8, dest: *[7]u8, mod: u2) void {
-    std.mem.copyForwards(u8, &dest.*, switch (addr & 0b00_000_111) {
-        0b00_000_000 => "bx + si",
-        0b00_000_001 => "bx + di",
-        0b00_000_010 => "bp + si",
-        0b00_000_011 => "bp + di",
-        0b00_000_100 => "si",
-        0b00_000_101 => "di",
-        0b00_000_110 => if (mod == 0b00) "75" else "bp", // FIXME: What is direct address
-        0b00_000_111 => "bx",
-        else => unreachable,
-    });
+    std.debug.print("{s} {s}, {d}\n", .{ instr_type, a.reg, a.data.? });
+    try writer.print("{s} {s}, {d}\n", .{ instr_type, a.reg, a.data.? });
 }
 
 fn get_mod_field(byte: u8) u2 {

@@ -40,7 +40,7 @@ bits 16
 ;add ax, 1000
 ;add al, -30
 ;add al, 9
-
+;
 ;sub bx, [bx+si]
 ;sub bx, [bp]
 ;sub si, 2
@@ -65,7 +65,7 @@ bits 16
 ;sub ax, 1000
 ;sub al, -30
 ;sub al, 9
-
+;
 ;cmp bx, [bx+si]
 ;cmp bx, [bp]
 ;cmp si, 2
