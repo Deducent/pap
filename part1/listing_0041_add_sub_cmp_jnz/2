@@ -2,14 +2,14 @@ const std = @import("std");
 var i: u8 = 0;
 
 const assembly = struct {
-    buffer: [1024]u8 = [_]u8{undefined} ** 1024,
+    buffer: [7]u8 = [_]u8{undefined} ** 7,
+    byte_count: u32 = 0,
     r_m: []const u8 = undefined,
     reg: []const u8 = undefined,
     byte_word: []const u8 = undefined,
     data: ?u16 = null,
     disp_h: u16 = undefined,
     disp_l: u8 = undefined,
-    byte_count: u8 = 0,
     mod: u2 = undefined,
     d: u1 = undefined,
     s: u1 = undefined,
@@ -32,12 +32,17 @@ const assembly = struct {
             0b00_000_101 => self.r_m = "di",
             0b00_000_110 => if (self.mod == 0b00) {
                 const byte4: u16 = bytes[i + 3];
-                self.byte_count += 1;
                 const value: u16 = (byte4 << 8) | bytes[i + 2];
-                self.byte_count += 1;
                 self.r_m = try std.fmt.bufPrint(&self.buffer, "{d}", .{value});
 
-                self.set_data(bytes);
+                if (self.w == 1 and self.s == 0) {
+                    self.data = bytes[i + 5];
+                    self.data = (self.data.? << 8) | bytes[i + 4];
+                    i += 6;
+                } else {
+                    self.data = bytes[i + 4];
+                    i += 5;
+                }
             } else {
                 self.r_m = "bp";
             },
@@ -61,30 +66,30 @@ const assembly = struct {
     }
 
     fn set_data(self: *assembly, bytes: []u8) void {
-        if (self.w == 1 and self.s == 0) {
-            const byte_next = bytes[i + self.byte_count];
-            self.byte_count += 1;
-            self.data = bytes[i + self.byte_count];
-            self.byte_count += 1;
-            self.data = (self.data.? << 8) | byte_next;
+        if (a.w == 1 and a.s == 0) {
+            const byte_next = bytes[i + a.byte_count];
+            a.byte_count += 1;
+            a.data = bytes[i + a.byte_count];
+            a.byte_count += 1;
+            a.data = (a.data.? << 8) | byte_next;
         } else {
-            self.data = bytes[i + self.byte_count];
-            self.byte_count += 1;
+            a.data = bytes[i + a.byte_count];
+            a.byte_count += 1;
         }
     }
 };
 pub fn main() !void {
-    var args = std.process.args();
-    defer args.deinit();
-
-    _ = args.skip();
-    const path: ?[]const u8 = args.next();
-    if (path == null) {
-        return error.InvalidArgument;
-    }
-
-    var file = try std.fs.cwd().openFile(path.?, .{});
-    // var file = try std.fs.cwd().openFile("../listing_0041_add_sub_cmp_jnz/listing_41_add_sub_cmp_jnz", .{});
+    // var args = std.process.args();
+    // defer args.deinit();
+    //
+    // _ = args.skip();
+    // const path: ?[]const u8 = args.next();
+    // if (path == null) {
+    //     return error.InvalidArgument;
+    // }
+    //
+    // var file = try std.fs.cwd().openFile(path.?, .{});
+    var file = try std.fs.cwd().openFile("../listing_0041_add_sub_cmp_jnz/listing_41_add_sub_cmp_jnz", .{});
     defer file.close();
 
     const reader = file.reader();
@@ -134,6 +139,7 @@ fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer) !void {
         a.data = byte2;
     }
     i += a.byte_count;
+    std.debug.print("{s} {s}, {d}\n", .{ "mov", a.reg, a.data.? });
     try writer.print("{s} {s}, {d}\n", .{ "mov", a.reg, a.data.? });
 }
 
@@ -150,23 +156,36 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
 
     a.set_register_name(byte2 >> 3, &a.reg);
 
-    switch (a.mod) {
-        0b11 => a.set_register_name(byte2, &a.r_m),
-        0b01 => {
+    if (a.mod == 0b11) {
+        a.set_register_name(byte2, &a.r_m);
+    } else {
+        if (bytes.len > (i + 2)) {
             a.disp_l = bytes[i + 2];
             a.byte_count += 1;
-            try a.set_effective_address_calc(byte2, bytes);
-        },
-        0b10 => {
-            a.disp_l = bytes[i + 2];
-            a.byte_count += 1;
+        }
+        if (bytes.len > (i + 3)) {
             a.disp_h = bytes[i + 3];
             a.byte_count += 1;
-            try a.set_effective_address_calc(byte2, bytes);
-        },
-        0b00 => try a.set_effective_address_calc(byte2, bytes),
+        }
+
+        try a.set_effective_address_calc(byte2, bytes);
     }
 
+    if (a.d == 0) {
+        switch (a.mod) {
+            0b01 => std.debug.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, a.disp_l, a.reg }),
+            0b10 => std.debug.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, ((a.disp_h << 8) | a.disp_l), a.reg }),
+            0b00 => std.debug.print("{s} [{s}], {s}\n", .{ instr_type, a.r_m, a.reg }),
+            0b11 => std.debug.print("{s} {s}, {s}\n", .{ instr_type, a.r_m, a.reg }),
+        }
+    } else {
+        switch (a.mod) {
+            0b01 => std.debug.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, a.disp_l }),
+            0b10 => std.debug.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, ((a.disp_h << 8) | a.disp_l) }),
+            0b00 => std.debug.print("{s} {s}, [{s}]\n", .{ instr_type, a.reg, a.r_m }),
+            0b11 => std.debug.print("{s} {s}, {s}\n", .{ instr_type, a.reg, a.r_m }),
+        }
+    }
     if (a.d == 0) {
         switch (a.mod) {
             0b01 => try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, a.disp_l, a.reg }),
@@ -204,12 +223,30 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
     switch (a.mod) {
         0b11 => {
             a.set_register_name(byte2, &a.r_m);
-            a.set_data(bytes);
+            if (a.w == 1 and a.s == 0) {
+                const byte_next = bytes[i + a.byte_count];
+                a.byte_count += 1;
+                a.data = bytes[i + a.byte_count];
+                a.byte_count += 1;
+                a.data = (a.data.? << 8) | byte_next;
+            } else {
+                a.data = bytes[i + a.byte_count];
+                a.byte_count += 1;
+            }
         },
         0b01 => {
             a.disp_l = bytes[i + 2];
             a.byte_count += 1;
-            a.set_data(bytes);
+            if (a.w == 1 and a.s == 0) {
+                const byte_next = bytes[i + a.byte_count];
+                a.byte_count += 1;
+                a.data = bytes[i + a.byte_count];
+                a.byte_count += 1;
+                a.data = (a.data.? << 8) | byte_next;
+            } else {
+                a.data = bytes[i + a.byte_count];
+                a.byte_count += 1;
+            }
             try a.set_effective_address_calc(byte2, bytes);
             a.set_byte_word();
         },
@@ -217,7 +254,16 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
             a.disp_l = bytes[i + 2];
             a.disp_h = bytes[i + 3];
             a.byte_count += 2;
-            a.set_data(bytes);
+            if (a.w == 1 and a.s == 0) {
+                const byte_next = bytes[i + a.byte_count];
+                a.byte_count += 1;
+                a.data = bytes[i + a.byte_count];
+                a.byte_count += 1;
+                a.data = (a.data.? << 8) | byte_next;
+            } else {
+                a.data = bytes[i + a.byte_count];
+                a.byte_count += 1;
+            }
             try a.set_effective_address_calc(byte2, bytes);
             a.set_byte_word();
         },
@@ -238,6 +284,12 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
         },
     }
 
+    switch (a.mod) {
+        0b01 => std.debug.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, a.byte_word, a.r_m, a.disp_l, a.data.? }),
+        0b10 => std.debug.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, a.byte_word, a.r_m, ((a.disp_h << 8) | a.disp_l), a.data.? }),
+        0b00 => std.debug.print("{s} {s} [{s}], {d}\n", .{ instr, a.byte_word, a.r_m, a.data.? }),
+        0b11 => std.debug.print("{s} {s}, {d}\n", .{ instr, a.r_m, a.data.? }),
+    }
     switch (a.mod) {
         0b01 => try writer.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, a.byte_word, a.r_m, a.disp_l, a.data.? }),
         0b10 => try writer.print("{s} {s} [{s} + {d}], {d}\n", .{ instr, a.byte_word, a.r_m, ((a.disp_h << 8) | a.disp_l), a.data.? }),
@@ -265,6 +317,7 @@ fn pattern_immediate_from_accumalator(bytes: []u8, writer: std.fs.File.Writer, i
         a.data = byte2;
         i += 2;
     }
+    std.debug.print("{s} {s}, {d}\n", .{ instr_type, a.reg, a.data.? });
     try writer.print("{s} {s}, {d}\n", .{ instr_type, a.reg, a.data.? });
 }
 
