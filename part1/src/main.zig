@@ -2,6 +2,7 @@ const std = @import("std");
 var i: u8 = 0;
 
 const assembly = struct {
+    buffer: [1024]u8 = [_]u8{undefined} ** 1024,
     byte_count: u32 = undefined,
     r_m: []const u8 = undefined,
     reg: []const u8 = undefined,
@@ -32,8 +33,7 @@ const assembly = struct {
             0b00_000_110 => if (self.mod == 0b00) {
                 const byte4: u16 = bytes[i + 3];
                 const value: u16 = (byte4 << 8) | bytes[i + 2];
-                var buffer: [1024]u8 = [_]u8{undefined} ** 1024;
-                self.r_m = try std.fmt.bufPrint(&buffer, "{d}", .{value});
+                self.r_m = try std.fmt.bufPrint(&self.buffer, "{d}", .{value});
                 std.debug.print("r_m: {s}\n", .{self.r_m});
 
                 if (self.w == 1 and self.s == 0) {
