@@ -110,7 +110,33 @@ pub fn main() !void {
             0b000001_00 => try pattern_immediate_from_accumalator(bytes, writer, "add"),
             0b001011_00 => try pattern_immediate_from_accumalator(bytes, writer, "sub"),
             0b001111_00 => try pattern_immediate_from_accumalator(bytes, writer, "cmp"),
-            else => unreachable,
+            0b011101_00,
+            0b011111_00,
+            0b011111_10,
+            0b011100_10,
+            0b011101_10,
+            0b011110_10,
+            0b011100_00,
+            0b011110_00,
+            0b011101_01,
+            0b011111_01,
+            0b011111_11,
+            0b011100_11,
+            0b011101_11,
+            0b011110_11,
+            0b011100_01,
+            0b011110_01,
+            0b111000_10,
+            0b111000_01,
+            0b111000_00,
+            0b111000_11,
+            => try jump_pattern(bytes, writer),
+            else => {
+                std.debug.print("{b}\n", .{bytes[i]});
+                std.debug.print("{b}\n", .{bytes[i] & 0b111111_00});
+                std.debug.assert(bytes[i] & 0b111111_00 == 0b011101_00);
+                unreachable;
+            },
         }
     }
     std.debug.assert(i == file_size);
@@ -276,4 +302,35 @@ fn get_mod_field(byte: u8) u2 {
         0b11_000000 => 0b11,
         else => unreachable,
     };
+}
+
+fn jump_pattern(bytes: []u8, writer: std.fs.File.Writer) !void {
+    const ip_inc8: u8 = bytes[i + 1];
+
+    const opcode = switch (bytes[i] & 0b11111111) {
+        0b01110100 => "je",
+        0b01111100 => "jl",
+        0b01111110 => "jle",
+        0b01110010 => "jb",
+        0b01110110 => "jbe",
+        0b01111010 => "jp",
+        0b01110000 => "jo",
+        0b01111000 => "js",
+        0b01110101 => "jne",
+        0b01111101 => "jnl",
+        0b01111111 => "jg",
+        0b01110011 => "jnb",
+        0b01110111 => "ja",
+        0b01111011 => "jnp",
+        0b01110001 => "jno",
+        0b01111001 => "jns",
+        0b11100010 => "loop",
+        0b11100001 => "loopz",
+        0b11100000 => "loopnz",
+        0b11100011 => "jcxz",
+        else => unreachable,
+    };
+
+    try writer.print("{s} {d}\n", .{ opcode, ip_inc8 });
+    i += 2;
 }
