@@ -133,8 +133,6 @@ pub fn main() !void {
             => try jump_pattern(bytes, writer),
             else => {
                 std.debug.print("{b}\n", .{bytes[i]});
-                std.debug.print("{b}\n", .{bytes[i] & 0b111111_00});
-                std.debug.assert(bytes[i] & 0b111111_00 == 0b011101_00);
                 unreachable;
             },
         }
