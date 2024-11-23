@@ -72,6 +72,21 @@ const assembly = struct {
             self.byte_count += 1;
         }
     }
+
+    fn clear(self: *assembly) void {
+        self.buffer = [_]u8{undefined} ** 1024;
+        self.r_m = undefined;
+        self.reg = undefined;
+        self.byte_word = undefined;
+        self.data = null;
+        self.disp_h = undefined;
+        self.disp_l = undefined;
+        self.byte_count = 0;
+        self.mod = undefined;
+        self.d = undefined;
+        self.s = undefined;
+        self.w = undefined;
+    }
 };
 pub fn main() !void {
     var args = std.process.args();
@@ -79,12 +94,9 @@ pub fn main() !void {
 
     _ = args.skip();
     const path: ?[]const u8 = args.next();
-    if (path == null) {
-        return error.InvalidArgument;
-    }
 
     var file = try std.fs.cwd().openFile(path.?, .{});
-    // var file = try std.fs.cwd().openFile("../listing_0041_add_sub_cmp_jnz/listing_41_add_sub_cmp_jnz", .{});
+    // var file = try std.fs.cwd().openFile("../listing_0043_immediate_movs/listing_0042_immediate_movs", .{});
     defer file.close();
 
     const reader = file.reader();
@@ -99,17 +111,17 @@ pub fn main() !void {
     try writer.print("bits 16\n\n", .{});
 
     std.debug.print("bytes: {b}\n", .{bytes});
+    var a: assembly = assembly{};
     while (i < file_size) {
         switch (bytes[i] & 0b111111_00) {
-            0b1011_0000 => try mov_immediate(bytes, writer), // im -> reg
-            0b100010_00 => try pattern_register_to_register(bytes, writer, "mov"), // reg -> reg
-            0b000000_00 => try pattern_register_to_register(bytes, writer, "add"), // reg -> reg
-            0b001010_00 => try pattern_register_to_register(bytes, writer, "sub"), // reg -> reg
-            0b001110_00 => try pattern_register_to_register(bytes, writer, "cmp"), // reg -> reg
-            0b100000_00 => try pattern_immediate_register_memory(bytes, writer), // reg -> memory
-            0b000001_00 => try pattern_immediate_from_accumalator(bytes, writer, "add"),
-            0b001011_00 => try pattern_immediate_from_accumalator(bytes, writer, "sub"),
-            0b001111_00 => try pattern_immediate_from_accumalator(bytes, writer, "cmp"),
+            0b100010_00 => try pattern_register_to_register(bytes, writer, "mov", &a), // reg -> reg
+            0b000000_00 => try pattern_register_to_register(bytes, writer, "add", &a), // reg -> reg
+            0b001010_00 => try pattern_register_to_register(bytes, writer, "sub", &a), // reg -> reg
+            0b001110_00 => try pattern_register_to_register(bytes, writer, "cmp", &a), // reg -> reg
+            0b100000_00 => try pattern_immediate_register_memory(bytes, writer, &a), // reg -> memory
+            0b000001_00 => try pattern_immediate_from_accumalator(bytes, writer, "add", &a),
+            0b001011_00 => try pattern_immediate_from_accumalator(bytes, writer, "sub", &a),
+            0b001111_00 => try pattern_immediate_from_accumalator(bytes, writer, "cmp", &a),
             0b011101_00,
             0b011111_00,
             0b011111_10,
@@ -132,18 +144,21 @@ pub fn main() !void {
             0b111000_11,
             => try jump_pattern(bytes, writer),
             else => {
-                std.debug.print("{b}\n", .{bytes[i]});
-                std.debug.print("{b}\n", .{bytes[i] & 0b111111_00});
-                std.debug.assert(bytes[i] & 0b111111_00 == 0b011101_00);
-                unreachable;
+                if (bytes[i] & 0b1111_0000 == 0b1011_0000) {
+                    try mov_immediate(bytes, writer, &a); // im -> reg
+                } else {
+                    std.debug.print("{b}\n", .{bytes[i]});
+                    std.debug.print("{b}\n", .{bytes[i] & 0b111111_00});
+                    unreachable;
+                }
             },
         }
+        a.clear();
     }
     std.debug.assert(i == file_size);
 }
 
-fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer) !void {
-    var a: assembly = assembly{};
+fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
     a.byte_count = 2;
@@ -163,8 +178,7 @@ fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer) !void {
     try writer.print("{s} {s}, {d}\n", .{ "mov", a.reg, a.data.? });
 }
 
-fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8) !void {
-    var a: assembly = assembly{};
+fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8, a: *assembly) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
     a.byte_count = 2;
@@ -211,15 +225,13 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
     i += a.byte_count;
 }
 
-fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !void {
+fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
-    var a: assembly = assembly{
-        .s = if ((byte1 & 0b000000_1_0) > 0) 1 else 0,
-        .w = if ((byte1 & 0b0000000_1) > 0) 1 else 0,
-        .mod = get_mod_field(byte2),
-        .byte_count = 2,
-    };
+    a.s = if ((byte1 & 0b000000_1_0) > 0) 1 else 0;
+    a.w = if ((byte1 & 0b0000000_1) > 0) 1 else 0;
+    a.mod = get_mod_field(byte2);
+    a.byte_count = 2;
 
     const instr = switch (byte2 & 0b00_111_000) {
         0b00_000_000 => "add",
@@ -273,13 +285,11 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
     i += a.byte_count;
 }
 
-fn pattern_immediate_from_accumalator(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8) !void {
+fn pattern_immediate_from_accumalator(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8, a: *assembly) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
     var byte3: u16 = undefined;
-    var a = assembly{
-        .w = if ((byte1 & 0b0000000_1) > 0) 1 else 0,
-    };
+    a.w = if ((byte1 & 0b0000000_1) > 0) 1 else 0;
 
     if (a.w == 1) {
         a.reg = "ax";
