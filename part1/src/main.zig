@@ -89,14 +89,14 @@ const assembly = struct {
     }
 };
 pub fn main() !void {
-    var args = std.process.args();
-    defer args.deinit();
-
-    _ = args.skip();
-    const path: ?[]const u8 = args.next();
-
-    var file = try std.fs.cwd().openFile(path.?, .{});
-    // var file = try std.fs.cwd().openFile("../listing_0043_immediate_movs/listing_0042_immediate_movs", .{});
+    // var args = std.process.args();
+    // defer args.deinit();
+    //
+    // _ = args.skip();
+    // const path: ?[]const u8 = args.next();
+    //
+    // var file = try std.fs.cwd().openFile(path.?, .{});
+    var file = try std.fs.cwd().openFile("../listing_0043_immediate_movs/listing_0043_immediate_movs", .{});
     defer file.close();
 
     const reader = file.reader();
@@ -112,6 +112,12 @@ pub fn main() !void {
 
     std.debug.print("bytes: {b}\n", .{bytes});
     var a: assembly = assembly{};
+
+    const allocator = std.heap.page_allocator;
+    var map = std.StringHashMap(u16).init(allocator);
+    defer map.deinit();
+    try set_hash_map(&map);
+
     while (i < file_size) {
         switch (bytes[i] & 0b111111_00) {
             0b100010_00 => try pattern_register_to_register(bytes, writer, "mov", &a), // reg -> reg
@@ -153,9 +159,39 @@ pub fn main() !void {
                 }
             },
         }
+        try run_asm(a, &map);
         a.clear();
     }
     std.debug.assert(i == file_size);
+}
+
+fn set_hash_map(map: *std.StringHashMap(u16)) !void {
+    try map.put("ax", 0);
+    try map.put("bx", 0);
+    try map.put("cx", 0);
+    try map.put("dx", 0);
+
+    try map.put("sp", 0);
+    try map.put("bp", 0);
+    try map.put("si", 0);
+    try map.put("di", 0);
+
+    try map.put("al", 0);
+    try map.put("bl", 0);
+    try map.put("cl", 0);
+    try map.put("dl", 0);
+}
+
+fn run_asm(a: assembly, map: *std.StringHashMap(u16)) !void {
+    std.debug.print("mov {s}, {d}\n", .{ a.reg, a.data.? });
+    std.debug.print("vorher Hashmap: {any}\n \n", .{map.unmanaged});
+    try map.put(a.reg, a.data.?);
+    const it = map.iterator();
+    for (0..map.count()) |_| {
+        const entry = it.next();
+        std.debug.print("key -> value {any} -> {any}\n", .{ entry.?.key_ptr, entry.?.value_ptr });
+    }
+    std.debug.print("nachher Hashmap: {any}\n \n", .{map.unmanaged});
 }
 
 fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
