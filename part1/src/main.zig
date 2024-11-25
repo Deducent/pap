@@ -152,6 +152,10 @@ pub fn main() !void {
     std.debug.print("bytes: {b}\n", .{bytes});
     var a: assembly = assembly{};
 
+    const allocator = std.heap.page_allocator;
+    var map = std.StringHashMap(u16).init(allocator);
+    defer map.deinit();
+    try set_hash_map(&map);
     while (i < file_size) {
         switch (bytes[i] & 0b111111_00) {
             0b100010_00 => try pattern_register_to_register(bytes, writer, "mov", &a), // reg -> reg
@@ -203,6 +207,22 @@ fn run_asm(a: assembly) !void {
     _ = .{a};
     r.dump_registers();
 }
+
+fn set_hash_map(map: *std.StringHashMap(u16)) !void {
+    try map.put("ax", 0);
+    try map.put("bx", 0);
+    try map.put("cx", 0);
+    try map.put("dx", 0);
+    try map.put("sp", 0);
+    try map.put("bp", 0);
+    try map.put("si", 0);
+    try map.put("di", 0);
+    try map.put("al", 0);
+    try map.put("bl", 0);
+    try map.put("cl", 0);
+    try map.put("dl", 0);
+}
+
 fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
