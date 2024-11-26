@@ -2,22 +2,10 @@ const std = @import("std");
 var i: u8 = 0;
 
 const register = struct {
-    ax: struct {
-        ah: u8,
-        al: u8,
-    } = .{ .ah = 0, .al = 0 },
-    bx: struct {
-        bh: u8,
-        bl: u8,
-    } = .{ .bh = 0, .bl = 0 },
-    cx: struct {
-        ch: u8,
-        cl: u8,
-    } = .{ .ch = 0, .cl = 0 },
-    dx: struct {
-        dh: u8,
-        dl: u8,
-    } = .{ .dh = 0, .dl = 0 },
+    ax: u16 = 0,
+    bx: u16 = 0,
+    cx: u16 = 0,
+    dx: u16 = 0,
     sp: u16 = 0,
     bp: u16 = 0,
     si: u16 = 0,
@@ -36,6 +24,23 @@ const register = struct {
         std.debug.print("\n", .{});
     }
 };
+
+fn get_low(value: u16) u8 {
+    return @truncate(value & 0b1111_1111);
+}
+
+fn get_high(value: u16) u16 {
+    return @truncate((value & 0b1111_1111_0000_0000) >> 8);
+}
+
+fn set_low(reg: *u16, value: u8) void {
+    reg.* = reg | value;
+}
+
+fn set_high(reg: *u16, value: u8) void {
+    const shifted: u16 = value << 8;
+    reg.* = reg | shifted;
+}
 
 var r = register{};
 
@@ -152,10 +157,6 @@ pub fn main() !void {
     std.debug.print("bytes: {b}\n", .{bytes});
     var a: assembly = assembly{};
 
-    const allocator = std.heap.page_allocator;
-    var map = std.StringHashMap(u16).init(allocator);
-    defer map.deinit();
-    try set_hash_map(&map);
     while (i < file_size) {
         switch (bytes[i] & 0b111111_00) {
             0b100010_00 => try pattern_register_to_register(bytes, writer, "mov", &a), // reg -> reg
@@ -206,21 +207,9 @@ pub fn main() !void {
 fn run_asm(a: assembly) !void {
     _ = .{a};
     r.dump_registers();
-}
-
-fn set_hash_map(map: *std.StringHashMap(u16)) !void {
-    try map.put("ax", 0);
-    try map.put("bx", 0);
-    try map.put("cx", 0);
-    try map.put("dx", 0);
-    try map.put("sp", 0);
-    try map.put("bp", 0);
-    try map.put("si", 0);
-    try map.put("di", 0);
-    try map.put("al", 0);
-    try map.put("bl", 0);
-    try map.put("cl", 0);
-    try map.put("dl", 0);
+    std.debug.print("original: {b}\n", .{0b10110011_10101010});
+    std.debug.print("low {b}\n", .{get_low(0b10110011_10101010)});
+    std.debug.print("high {b}\n", .{get_high(0b10110011_10101010)});
 }
 
 fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
