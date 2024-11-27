@@ -34,12 +34,13 @@ fn get_high(value: u16) u16 {
 }
 
 fn set_low(reg: *u16, value: u8) void {
-    reg.* = reg | value;
+    reg.* &= 0b11111111_00000000;
+    reg.* |= @as(u16, value);
 }
 
 fn set_high(reg: *u16, value: u8) void {
-    const shifted: u16 = value << 8;
-    reg.* = reg | shifted;
+    reg.* &= 0b00000000_11111111;
+    reg.* |= @as(u16, value) << 8;
 }
 
 var r = register{};
@@ -207,9 +208,17 @@ pub fn main() !void {
 fn run_asm(a: assembly) !void {
     _ = .{a};
     r.dump_registers();
-    std.debug.print("original: {b}\n", .{0b10110011_10101010});
-    std.debug.print("low {b}\n", .{get_low(0b10110011_10101010)});
-    std.debug.print("high {b}\n", .{get_high(0b10110011_10101010)});
+    var te: u16 = 0b10110011_10101010;
+    std.debug.print("original: {b}\n", .{te});
+    std.debug.print("low {b}\n", .{get_low(te)});
+    std.debug.print("high {b}\n", .{get_high(te)});
+
+    std.debug.print("original: {b}\n", .{te});
+    set_low(&te, 0b1000_0000);
+    std.debug.print("set low {b}\n", .{get_low(te)});
+    set_high(&te, 0b1000_0000);
+    std.debug.print("set high {b}\n", .{get_high(te)});
+    std.debug.print("final: {b}\n", .{te});
 }
 
 fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
