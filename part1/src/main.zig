@@ -13,14 +13,22 @@ const register = struct {
 
     fn dump_registers(self: register) void {
         std.debug.print("\nREGISTER STATE\n", .{});
-        std.debug.print("ax: {any}\n", .{self.ax});
-        std.debug.print("bx: {any}\n", .{self.bx});
-        std.debug.print("cx: {any}\n", .{self.cx});
-        std.debug.print("dx: {any}\n", .{self.dx});
-        std.debug.print("sp: {any}\n", .{self.sp});
-        std.debug.print("bp: {any}\n", .{self.bp});
-        std.debug.print("si: {any}\n", .{self.si});
-        std.debug.print("di: {any}\n", .{self.di});
+        std.debug.print("ax: {x}\n", .{self.ax});
+        std.debug.print("  al: {x}\n", .{get_low(self.ax)});
+        std.debug.print("  ah: {x}\n", .{get_high(self.ax)});
+        std.debug.print("bx: {x}\n", .{self.bx});
+        std.debug.print("  bl: {x}\n", .{get_low(self.bx)});
+        std.debug.print("  bh: {x}\n", .{get_high(self.bx)});
+        std.debug.print("cx: {x}\n", .{self.cx});
+        std.debug.print("  cl: {x}\n", .{get_low(self.cx)});
+        std.debug.print("  ch: {x}\n", .{get_high(self.cx)});
+        std.debug.print("dx: {x}\n", .{self.dx});
+        std.debug.print("  dl: {x}\n", .{get_low(self.dx)});
+        std.debug.print("  dh: {x}\n", .{get_high(self.dx)});
+        std.debug.print("sp: {x}\n", .{self.sp});
+        std.debug.print("bp: {x}\n", .{self.bp});
+        std.debug.print("si: {x}\n", .{self.si});
+        std.debug.print("di: {x}\n", .{self.di});
         std.debug.print("\n", .{});
     }
 };
@@ -29,24 +37,25 @@ fn get_low(value: u16) u8 {
     return @truncate(value & 0b1111_1111);
 }
 
-fn get_high(value: u16) u16 {
+fn get_high(value: u16) u8 {
     return @truncate((value & 0b1111_1111_0000_0000) >> 8);
 }
 
-fn set_low(reg: *u16, value: u8) void {
+fn set_low(reg: *u16, value: u16) void {
     reg.* &= 0b11111111_00000000;
-    reg.* |= @as(u16, value);
+    reg.* |= @as(u16, @truncate(value));
 }
 
-fn set_high(reg: *u16, value: u8) void {
+fn set_high(reg: *u16, value: u16) void {
     reg.* &= 0b00000000_11111111;
-    reg.* |= @as(u16, value) << 8;
+    reg.* |= @as(u16, @truncate(value)) << 8;
 }
 
 var r = register{};
 
 const assembly = struct {
     buffer: [1024]u8 = [_]u8{undefined} ** 1024,
+    complete_instr: []const u8 = undefined,
     r_m: []const u8 = undefined,
     reg: []const u8 = undefined,
     byte_word: []const u8 = undefined,
@@ -158,6 +167,7 @@ pub fn main() !void {
     std.debug.print("bytes: {b}\n", .{bytes});
     var a: assembly = assembly{};
 
+    r.dump_registers();
     while (i < file_size) {
         switch (bytes[i] & 0b111111_00) {
             0b100010_00 => try pattern_register_to_register(bytes, writer, "mov", &a), // reg -> reg
@@ -188,7 +198,7 @@ pub fn main() !void {
             0b111000_01,
             0b111000_00,
             0b111000_11,
-            => try jump_pattern(bytes, writer),
+            => try jump_pattern(bytes, writer, &a),
             else => {
                 if (bytes[i] & 0b1111_0000 == 0b1011_0000) {
                     try mov_immediate(bytes, writer, &a); // im -> reg
@@ -203,22 +213,60 @@ pub fn main() !void {
         a.clear();
     }
     std.debug.assert(i == file_size);
+    r.dump_registers();
 }
 
 fn run_asm(a: assembly) !void {
-    _ = .{a};
-    r.dump_registers();
-    var te: u16 = 0b10110011_10101010;
-    std.debug.print("original: {b}\n", .{te});
-    std.debug.print("low {b}\n", .{get_low(te)});
-    std.debug.print("high {b}\n", .{get_high(te)});
-
-    std.debug.print("original: {b}\n", .{te});
-    set_low(&te, 0b1000_0000);
-    std.debug.print("set low {b}\n", .{get_low(te)});
-    set_high(&te, 0b1000_0000);
-    std.debug.print("set high {b}\n", .{get_high(te)});
-    std.debug.print("final: {b}\n", .{te});
+    std.debug.print("{s}", .{a.complete_instr});
+    if (std.mem.eql(u8, a.reg, "ax")) {
+        std.debug.print("; ax: ( {d}", .{r.ax});
+        r.ax = a.data.?;
+        std.debug.print(" -> {d} )\n", .{a.data.?});
+    } else if (std.mem.eql(u8, a.reg, "bx")) {
+        std.debug.print("; bx: ( {d}", .{r.bx});
+        r.bx = a.data.?;
+        std.debug.print(" -> {d} )\n", .{a.data.?});
+    } else if (std.mem.eql(u8, a.reg, "cx")) {
+        std.debug.print("; cx: ( {d}", .{r.cx});
+        r.cx = a.data.?;
+        std.debug.print(" -> {d} )\n", .{a.data.?});
+    } else if (std.mem.eql(u8, a.reg, "dx")) {
+        std.debug.print("; dx: ( {d}", .{r.dx});
+        r.dx = a.data.?;
+        std.debug.print(" -> {d} )\n", .{a.data.?});
+    } else if (std.mem.eql(u8, a.reg, "sp")) {
+        std.debug.print("; sp: ( {d}", .{r.sp});
+        r.sp = a.data.?;
+        std.debug.print(" -> {d} )\n", .{a.data.?});
+    } else if (std.mem.eql(u8, a.reg, "bp")) {
+        std.debug.print("; bp: ( {d}", .{r.bp});
+        r.bp = a.data.?;
+        std.debug.print(" -> {d} )\n", .{a.data.?});
+    } else if (std.mem.eql(u8, a.reg, "si")) {
+        std.debug.print("; si: ( {d}", .{r.si});
+        r.si = a.data.?;
+        std.debug.print(" -> {d} )\n", .{a.data.?});
+    } else if (std.mem.eql(u8, a.reg, "di")) {
+        std.debug.print("; di: ( {d}", .{r.di});
+        r.di = a.data.?;
+        std.debug.print(" -> {d} )\n", .{a.data.?});
+    } else if (std.mem.eql(u8, a.reg, "al")) {
+        set_low(&r.ax, a.data.?);
+    } else if (std.mem.eql(u8, a.reg, "bl")) {
+        set_low(&r.bx, a.data.?);
+    } else if (std.mem.eql(u8, a.reg, "cl")) {
+        set_low(&r.cx, a.data.?);
+    } else if (std.mem.eql(u8, a.reg, "dl")) {
+        set_low(&r.dx, a.data.?);
+    } else if (std.mem.eql(u8, a.reg, "ah")) {
+        set_high(&r.ax, a.data.?);
+    } else if (std.mem.eql(u8, a.reg, "bh")) {
+        set_high(&r.bx, a.data.?);
+    } else if (std.mem.eql(u8, a.reg, "ch")) {
+        set_high(&r.cx, a.data.?);
+    } else if (std.mem.eql(u8, a.reg, "dh")) {
+        set_high(&r.dx, a.data.?);
+    } else unreachable;
 }
 
 fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
@@ -239,6 +287,7 @@ fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
     }
     i += a.byte_count;
     try writer.print("{s} {s}, {d}\n", .{ "mov", a.reg, a.data.? });
+    a.complete_instr = try std.fmt.bufPrint(&a.buffer, "{s} {s}, {d}", .{ "mov", a.reg, a.data.? });
 }
 
 fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8, a: *assembly) !void {
@@ -277,6 +326,12 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
             0b00 => try writer.print("{s} [{s}], {s}\n", .{ instr_type, a.r_m, a.reg }),
             0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, a.r_m, a.reg }),
         }
+        a.complete_instr = switch (a.mod) {
+            0b01 => try std.fmt.bufPrint(&a.buffer, "{s} [{s} + {d}], {s}", .{ instr_type, a.r_m, a.disp_l, a.reg }),
+            0b10 => try std.fmt.bufPrint(&a.buffer, "{s} [{s} + {d}], {s}", .{ instr_type, a.r_m, ((a.disp_h << 8) | a.disp_l), a.reg }),
+            0b00 => try std.fmt.bufPrint(&a.buffer, "{s} [{s}], {s}", .{ instr_type, a.r_m, a.reg }),
+            0b11 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, {s}", .{ instr_type, a.r_m, a.reg }),
+        };
     } else {
         switch (a.mod) {
             0b01 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, a.disp_l }),
@@ -284,6 +339,12 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
             0b00 => try writer.print("{s} {s}, [{s}]\n", .{ instr_type, a.reg, a.r_m }),
             0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, a.reg, a.r_m }),
         }
+        a.complete_instr = switch (a.mod) {
+            0b01 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, [{s} + {d}]", .{ instr_type, a.reg, a.r_m, a.disp_l }),
+            0b10 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, [{s} + {d}]", .{ instr_type, a.reg, a.r_m, ((a.disp_h << 8) | a.disp_l) }),
+            0b00 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, [{s}]", .{ instr_type, a.reg, a.r_m }),
+            0b11 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, {s}", .{ instr_type, a.reg, a.r_m }),
+        };
     }
     i += a.byte_count;
 }
@@ -345,6 +406,12 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer, a:
         0b00 => try writer.print("{s} {s} [{s}], {d}\n", .{ instr, a.byte_word, a.r_m, a.data.? }),
         0b11 => try writer.print("{s} {s}, {d}\n", .{ instr, a.r_m, a.data.? }),
     }
+    a.complete_instr = switch (a.mod) {
+        0b01 => try std.fmt.bufPrint(&a.buffer, "{s} {s} [{s} + {d}], {d}", .{ instr, a.byte_word, a.r_m, a.disp_l, a.data.? }),
+        0b10 => try std.fmt.bufPrint(&a.buffer, "{s} {s} [{s} + {d}], {d}", .{ instr, a.byte_word, a.r_m, ((a.disp_h << 8) | a.disp_l), a.data.? }),
+        0b00 => try std.fmt.bufPrint(&a.buffer, "{s} {s} [{s}], {d}", .{ instr, a.byte_word, a.r_m, a.data.? }),
+        0b11 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, {d}", .{ instr, a.r_m, a.data.? }),
+    };
     i += a.byte_count;
 }
 
@@ -365,6 +432,7 @@ fn pattern_immediate_from_accumalator(bytes: []u8, writer: std.fs.File.Writer, i
         i += 2;
     }
     try writer.print("{s} {s}, {d}\n", .{ instr_type, a.reg, a.data.? });
+    a.complete_instr = try std.fmt.bufPrint(&a.buffer, "{s} {s}, {d}", .{ instr_type, a.reg, a.data.? });
 }
 
 fn get_mod_field(byte: u8) u2 {
@@ -377,7 +445,7 @@ fn get_mod_field(byte: u8) u2 {
     };
 }
 
-fn jump_pattern(bytes: []u8, writer: std.fs.File.Writer) !void {
+fn jump_pattern(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
     const ip_inc8: u8 = bytes[i + 1];
 
     const opcode = switch (bytes[i] & 0b11111111) {
@@ -405,5 +473,6 @@ fn jump_pattern(bytes: []u8, writer: std.fs.File.Writer) !void {
     };
 
     try writer.print("{s} {d}\n", .{ opcode, ip_inc8 });
+    a.complete_instr = try std.fmt.bufPrint(&a.buffer, "{s} {d}", .{ opcode, ip_inc8 });
     i += 2;
 }
