@@ -1,38 +1,6 @@
 const std = @import("std");
 var i: u8 = 0;
 
-const register = struct {
-    ax: u16 = 0,
-    bx: u16 = 0,
-    cx: u16 = 0,
-    dx: u16 = 0,
-    sp: u16 = 0,
-    bp: u16 = 0,
-    si: u16 = 0,
-    di: u16 = 0,
-
-    fn dump_registers(self: register) void {
-        std.debug.print("\nREGISTER STATE\n", .{});
-        std.debug.print("ax: {x}\n", .{self.ax});
-        std.debug.print("  al: {x}\n", .{get_low(self.ax)});
-        std.debug.print("  ah: {x}\n", .{get_high(self.ax)});
-        std.debug.print("bx: {x}\n", .{self.bx});
-        std.debug.print("  bl: {x}\n", .{get_low(self.bx)});
-        std.debug.print("  bh: {x}\n", .{get_high(self.bx)});
-        std.debug.print("cx: {x}\n", .{self.cx});
-        std.debug.print("  cl: {x}\n", .{get_low(self.cx)});
-        std.debug.print("  ch: {x}\n", .{get_high(self.cx)});
-        std.debug.print("dx: {x}\n", .{self.dx});
-        std.debug.print("  dl: {x}\n", .{get_low(self.dx)});
-        std.debug.print("  dh: {x}\n", .{get_high(self.dx)});
-        std.debug.print("sp: {x}\n", .{self.sp});
-        std.debug.print("bp: {x}\n", .{self.bp});
-        std.debug.print("si: {x}\n", .{self.si});
-        std.debug.print("di: {x}\n", .{self.di});
-        std.debug.print("\n", .{});
-    }
-};
-
 fn get_low(value: u16) u8 {
     return @truncate(value & 0b1111_1111);
 }
@@ -50,8 +18,6 @@ fn set_high(reg: *u16, value: u16) void {
     reg.* &= 0b00000000_11111111;
     reg.* |= @as(u16, @truncate(value)) << 8;
 }
-
-var r = register{};
 
 const assembly = struct {
     buffer: [1024]u8 = [_]u8{undefined} ** 1024,
@@ -167,7 +133,12 @@ pub fn main() !void {
     std.debug.print("bytes: {b}\n", .{bytes});
     var a: assembly = assembly{};
 
-    r.dump_registers();
+    const allocator = std.heap.page_allocator;
+    var map = std.StringHashMap(u16).init(allocator);
+    defer map.deinit();
+    try set_hash_map(&map);
+
+    print_hash_map(map);
     while (i < file_size) {
         switch (bytes[i] & 0b111111_00) {
             0b100010_00 => try pattern_register_to_register(bytes, writer, "mov", &a), // reg -> reg
@@ -209,64 +180,49 @@ pub fn main() !void {
                 }
             },
         }
-        try run_asm(a);
+        try run_asm(a, &map);
         a.clear();
     }
     std.debug.assert(i == file_size);
-    r.dump_registers();
+    print_hash_map(map);
 }
 
-fn run_asm(a: assembly) !void {
-    std.debug.print("{s}", .{a.complete_instr});
-    if (std.mem.eql(u8, a.reg, "ax")) {
-        std.debug.print("; ax: ( {d}", .{r.ax});
-        r.ax = a.data.?;
-        std.debug.print(" -> {d} )\n", .{a.data.?});
-    } else if (std.mem.eql(u8, a.reg, "bx")) {
-        std.debug.print("; bx: ( {d}", .{r.bx});
-        r.bx = a.data.?;
-        std.debug.print(" -> {d} )\n", .{a.data.?});
-    } else if (std.mem.eql(u8, a.reg, "cx")) {
-        std.debug.print("; cx: ( {d}", .{r.cx});
-        r.cx = a.data.?;
-        std.debug.print(" -> {d} )\n", .{a.data.?});
-    } else if (std.mem.eql(u8, a.reg, "dx")) {
-        std.debug.print("; dx: ( {d}", .{r.dx});
-        r.dx = a.data.?;
-        std.debug.print(" -> {d} )\n", .{a.data.?});
-    } else if (std.mem.eql(u8, a.reg, "sp")) {
-        std.debug.print("; sp: ( {d}", .{r.sp});
-        r.sp = a.data.?;
-        std.debug.print(" -> {d} )\n", .{a.data.?});
-    } else if (std.mem.eql(u8, a.reg, "bp")) {
-        std.debug.print("; bp: ( {d}", .{r.bp});
-        r.bp = a.data.?;
-        std.debug.print(" -> {d} )\n", .{a.data.?});
-    } else if (std.mem.eql(u8, a.reg, "si")) {
-        std.debug.print("; si: ( {d}", .{r.si});
-        r.si = a.data.?;
-        std.debug.print(" -> {d} )\n", .{a.data.?});
-    } else if (std.mem.eql(u8, a.reg, "di")) {
-        std.debug.print("; di: ( {d}", .{r.di});
-        r.di = a.data.?;
-        std.debug.print(" -> {d} )\n", .{a.data.?});
-    } else if (std.mem.eql(u8, a.reg, "al")) {
-        set_low(&r.ax, a.data.?);
-    } else if (std.mem.eql(u8, a.reg, "bl")) {
-        set_low(&r.bx, a.data.?);
-    } else if (std.mem.eql(u8, a.reg, "cl")) {
-        set_low(&r.cx, a.data.?);
-    } else if (std.mem.eql(u8, a.reg, "dl")) {
-        set_low(&r.dx, a.data.?);
-    } else if (std.mem.eql(u8, a.reg, "ah")) {
-        set_high(&r.ax, a.data.?);
-    } else if (std.mem.eql(u8, a.reg, "bh")) {
-        set_high(&r.bx, a.data.?);
-    } else if (std.mem.eql(u8, a.reg, "ch")) {
-        set_high(&r.cx, a.data.?);
-    } else if (std.mem.eql(u8, a.reg, "dh")) {
-        set_high(&r.dx, a.data.?);
-    } else unreachable;
+fn set_hash_map(map: *std.StringHashMap(u16)) !void {
+    try map.put("ax", 0);
+    try map.put("bx", 0);
+    try map.put("cx", 0);
+    try map.put("dx", 0);
+    try map.put("sp", 0);
+    try map.put("bp", 0);
+    try map.put("si", 0);
+    try map.put("di", 0);
+}
+
+fn print_hash_map(map: std.StringHashMap(u16)) void {
+    std.debug.print("\nREGISTER STATE\n", .{});
+    std.debug.print("ax: {x}\n", .{map.get("ax").?});
+    std.debug.print("  al: {x}\n", .{get_low(map.get("ax").?)});
+    std.debug.print("  ah: {x}\n", .{get_high(map.get("ax").?)});
+    std.debug.print("bx: {x}\n", .{map.get("bx").?});
+    std.debug.print("  bl: {x}\n", .{get_low(map.get("bx").?)});
+    std.debug.print("  bh: {x}\n", .{get_high(map.get("bx").?)});
+    std.debug.print("cx: {x}\n", .{map.get("cx").?});
+    std.debug.print("  cl: {x}\n", .{get_low(map.get("cx").?)});
+    std.debug.print("  ch: {x}\n", .{get_high(map.get("cx").?)});
+    std.debug.print("dx: {x}\n", .{map.get("dx").?});
+    std.debug.print("  dl: {x}\n", .{get_low(map.get("dx").?)});
+    std.debug.print("  dh: {x}\n", .{get_high(map.get("dx").?)});
+    std.debug.print("sp: {x}\n", .{map.get("sp").?});
+    std.debug.print("bp: {x}\n", .{map.get("bp").?});
+    std.debug.print("si: {x}\n", .{map.get("si").?});
+    std.debug.print("di: {x}\n", .{map.get("di").?});
+    std.debug.print("\n", .{});
+}
+
+fn run_asm(a: assembly, map: *std.StringHashMap(u16)) !void {
+    std.debug.print("{s};", .{a.complete_instr});
+    std.debug.print(" {s} ({d} -> {d})\n", .{ a.reg, map.get(a.reg).?, a.data.? });
+    try map.put(a.reg, a.data.?);
 }
 
 fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
