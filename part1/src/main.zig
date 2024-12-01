@@ -1,6 +1,11 @@
 const std = @import("std");
 var i: u8 = 0;
 
+const source_operand = union(enum) {
+    reg: []const u8,
+    data: u16,
+};
+
 fn get_low(value: u16) u8 {
     return @truncate(value & 0b1111_1111);
 }
@@ -21,7 +26,15 @@ fn set_high(reg: *u16, value: u16) void {
 
 const assembly = struct {
     buffer: [1024]u8 = [_]u8{undefined} ** 1024,
-    complete_instr: []const u8 = undefined,
+    full_instr: struct {
+        opcode: []const u8,
+        src_operand: source_operand,
+        dest_operand: []const u8,
+    } = .{
+        .opcode = undefined,
+        .dest_operand = undefined,
+        .src_operand = undefined,
+    },
     r_m: []const u8 = undefined,
     reg: []const u8 = undefined,
     byte_word: []const u8 = undefined,
@@ -109,14 +122,14 @@ const assembly = struct {
 };
 
 pub fn main() !void {
-    // var args = std.process.args();
-    // defer args.deinit();
-    //
-    // _ = args.skip();
-    // const path: ?[]const u8 = args.next();
-    //
-    // var file = try std.fs.cwd().openFile(path.?, .{});
-    var file = try std.fs.cwd().openFile("../listing_0043_immediate_movs/listing_0043_immediate_movs", .{});
+    var args = std.process.args();
+    defer args.deinit();
+
+    _ = args.skip();
+    const path: ?[]const u8 = args.next();
+
+    var file = try std.fs.cwd().openFile(path.?, .{});
+    // var file = try std.fs.cwd().openFile("../listing_0043_immediate_movs/listing_0043_immediate_movs", .{});
     defer file.close();
 
     const reader = file.reader();
@@ -220,9 +233,19 @@ fn print_hash_map(map: std.StringHashMap(u16)) void {
 }
 
 fn run_asm(a: assembly, map: *std.StringHashMap(u16)) !void {
-    std.debug.print("{s};", .{a.complete_instr});
-    std.debug.print(" {s} ({d} -> {d})\n", .{ a.reg, map.get(a.reg).?, a.data.? });
-    try map.put(a.reg, a.data.?);
+    const dest = a.full_instr.dest_operand;
+    switch (a.full_instr.src_operand) {
+        .data => |data| {
+            std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
+            std.debug.print(" {s} ({d} -> {d})\n", .{ dest, map.get(a.reg).?, a.data.? });
+            try map.put(a.reg, a.data.?);
+        },
+        .reg => |reg| {
+            std.debug.print("{s} {s}, {s}; ", .{ a.full_instr.opcode, dest, reg });
+            std.debug.print(" {s} ({d} -> {d})\n", .{ dest, map.get(dest).?, map.get(reg).? });
+            try map.put(dest, map.get(reg).?);
+        },
+    }
 }
 
 fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
@@ -243,7 +266,11 @@ fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
     }
     i += a.byte_count;
     try writer.print("{s} {s}, {d}\n", .{ "mov", a.reg, a.data.? });
-    a.complete_instr = try std.fmt.bufPrint(&a.buffer, "{s} {s}, {d}", .{ "mov", a.reg, a.data.? });
+    a.full_instr = .{
+        .opcode = "mov",
+        .src_operand = source_operand{ .data = a.data.? },
+        .dest_operand = a.reg,
+    };
 }
 
 fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8, a: *assembly) !void {
@@ -282,12 +309,16 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
             0b00 => try writer.print("{s} [{s}], {s}\n", .{ instr_type, a.r_m, a.reg }),
             0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, a.r_m, a.reg }),
         }
-        a.complete_instr = switch (a.mod) {
-            0b01 => try std.fmt.bufPrint(&a.buffer, "{s} [{s} + {d}], {s}", .{ instr_type, a.r_m, a.disp_l, a.reg }),
-            0b10 => try std.fmt.bufPrint(&a.buffer, "{s} [{s} + {d}], {s}", .{ instr_type, a.r_m, ((a.disp_h << 8) | a.disp_l), a.reg }),
-            0b00 => try std.fmt.bufPrint(&a.buffer, "{s} [{s}], {s}", .{ instr_type, a.r_m, a.reg }),
-            0b11 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, {s}", .{ instr_type, a.r_m, a.reg }),
-        };
+
+        a.full_instr.opcode = instr_type;
+        a.full_instr.src_operand = source_operand{ .reg = a.reg };
+
+        switch (a.mod) {
+            0b01 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "[{s} + {d}]", .{ a.r_m, a.disp_l }),
+            0b10 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "[{s} + {d}]", .{ a.r_m, ((a.disp_h << 8) | a.disp_l) }),
+            0b00 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "[{s}]", .{a.r_m}),
+            0b11 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s}", .{a.r_m}),
+        }
     } else {
         switch (a.mod) {
             0b01 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, a.disp_l }),
@@ -295,12 +326,16 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
             0b00 => try writer.print("{s} {s}, [{s}]\n", .{ instr_type, a.reg, a.r_m }),
             0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, a.reg, a.r_m }),
         }
-        a.complete_instr = switch (a.mod) {
-            0b01 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, [{s} + {d}]", .{ instr_type, a.reg, a.r_m, a.disp_l }),
-            0b10 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, [{s} + {d}]", .{ instr_type, a.reg, a.r_m, ((a.disp_h << 8) | a.disp_l) }),
-            0b00 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, [{s}]", .{ instr_type, a.reg, a.r_m }),
-            0b11 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, {s}", .{ instr_type, a.reg, a.r_m }),
-        };
+
+        a.full_instr.opcode = instr_type;
+        a.full_instr.dest_operand = a.reg;
+
+        switch (a.mod) {
+            0b01 => a.full_instr.src_operand.reg = try std.fmt.bufPrint(&a.buffer, "[{s} + {d}]", .{ a.r_m, a.disp_l }),
+            0b10 => a.full_instr.src_operand.reg = try std.fmt.bufPrint(&a.buffer, "[{s} + {d}]", .{ a.r_m, ((a.disp_h << 8) | a.disp_l) }),
+            0b00 => a.full_instr.src_operand.reg = try std.fmt.bufPrint(&a.buffer, "[{s}]", .{a.r_m}),
+            0b11 => a.full_instr.src_operand.reg = try std.fmt.bufPrint(&a.buffer, "{s}", .{a.r_m}),
+        }
     }
     i += a.byte_count;
 }
@@ -362,12 +397,16 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer, a:
         0b00 => try writer.print("{s} {s} [{s}], {d}\n", .{ instr, a.byte_word, a.r_m, a.data.? }),
         0b11 => try writer.print("{s} {s}, {d}\n", .{ instr, a.r_m, a.data.? }),
     }
-    a.complete_instr = switch (a.mod) {
-        0b01 => try std.fmt.bufPrint(&a.buffer, "{s} {s} [{s} + {d}], {d}", .{ instr, a.byte_word, a.r_m, a.disp_l, a.data.? }),
-        0b10 => try std.fmt.bufPrint(&a.buffer, "{s} {s} [{s} + {d}], {d}", .{ instr, a.byte_word, a.r_m, ((a.disp_h << 8) | a.disp_l), a.data.? }),
-        0b00 => try std.fmt.bufPrint(&a.buffer, "{s} {s} [{s}], {d}", .{ instr, a.byte_word, a.r_m, a.data.? }),
-        0b11 => try std.fmt.bufPrint(&a.buffer, "{s} {s}, {d}", .{ instr, a.r_m, a.data.? }),
-    };
+
+    a.full_instr.opcode = instr;
+    a.full_instr.src_operand.data = a.data.?;
+
+    switch (a.mod) {
+        0b01 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s} [{s} + {d}]", .{ a.byte_word, a.r_m, a.disp_l }),
+        0b10 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s} [{s} + {d}]", .{ a.byte_word, a.r_m, ((a.disp_h << 8) | a.disp_l) }),
+        0b00 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s} [{s}]", .{ a.byte_word, a.r_m }),
+        0b11 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s}", .{a.r_m}),
+    }
     i += a.byte_count;
 }
 
@@ -388,7 +427,9 @@ fn pattern_immediate_from_accumalator(bytes: []u8, writer: std.fs.File.Writer, i
         i += 2;
     }
     try writer.print("{s} {s}, {d}\n", .{ instr_type, a.reg, a.data.? });
-    a.complete_instr = try std.fmt.bufPrint(&a.buffer, "{s} {s}, {d}", .{ instr_type, a.reg, a.data.? });
+    a.full_instr.opcode = instr_type;
+    a.full_instr.src_operand.data = a.data.?;
+    a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s}", .{a.reg});
 }
 
 fn get_mod_field(byte: u8) u2 {
@@ -429,6 +470,7 @@ fn jump_pattern(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
     };
 
     try writer.print("{s} {d}\n", .{ opcode, ip_inc8 });
-    a.complete_instr = try std.fmt.bufPrint(&a.buffer, "{s} {d}", .{ opcode, ip_inc8 });
+    a.full_instr.opcode = opcode;
+    a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s} {d}", .{ opcode, ip_inc8 }); // FIXME: not right
     i += 2;
 }
