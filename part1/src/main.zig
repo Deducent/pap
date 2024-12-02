@@ -3,6 +3,7 @@ var i: u8 = 0;
 
 const source_operand = union(enum) {
     reg: []const u8,
+    memory: []const u8,
     data: u16,
 };
 
@@ -129,7 +130,7 @@ pub fn main() !void {
     const path: ?[]const u8 = args.next();
 
     var file = try std.fs.cwd().openFile(path.?, .{});
-    // var file = try std.fs.cwd().openFile("../listing_0043_immediate_movs/listing_0043_immediate_movs", .{});
+    // var file = try std.fs.cwd().openFile("../listing_0044_register_movs/listing_0044_register_movs", .{}); //INFO: for debugging
     defer file.close();
 
     const reader = file.reader();
@@ -245,6 +246,7 @@ fn run_asm(a: assembly, map: *std.StringHashMap(u16)) !void {
             std.debug.print(" {s} ({d} -> {d})\n", .{ dest, map.get(dest).?, map.get(reg).? });
             try map.put(dest, map.get(reg).?);
         },
+        .memory => {},
     }
 }
 
