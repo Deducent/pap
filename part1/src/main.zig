@@ -36,6 +36,7 @@ const assembly = struct {
         .dest_operand = undefined,
         .src_operand = undefined,
     },
+    flags: u16 = 0,
     r_m: []const u8 = undefined,
     reg: []const u8 = undefined,
     byte_word: []const u8 = undefined,
@@ -104,6 +105,28 @@ const assembly = struct {
             self.data = bytes[i + self.byte_count];
             self.byte_count += 1;
         }
+    }
+
+    fn set_zeroflag(self: *assembly) !void {
+        // 0000000000000000
+        // 0000000001000000 or
+        // 0000000001000000
+        self.flags |= 0b1_000_000;
+    }
+
+    fn unset_zeroflag(self: *assembly) !void {
+        // 0000100011000000
+        // 1111111110111111 and
+        // 0000100010000000
+        self.flags &= 0b1111_1111_1011_1111;
+    }
+
+    fn set_signflag(self: *assembly) !void {
+        self.flags |= 0b10_000_000;
+    }
+
+    fn unset_signflag(self: *assembly) !void {
+        self.flags &= 0b1111_1111_0111_1111;
     }
 
     fn clear(self: *assembly) void {
@@ -234,6 +257,14 @@ fn print_hash_map(map: std.StringHashMap(u16)) void {
 }
 
 fn run_asm(a: assembly, map: *std.StringHashMap(u16)) !void {
+    if (std.mem.eql(u8, a.full_instr.opcode, "mov")) {
+        try simulate_mov(a, map);
+    } else if (std.mem.eql(u8, a.full_instr.opcode, "sub")) {
+        try simulate_sub(a, map);
+    } else if (std.mem.eql(u8, a.full_instr.opcode, "add")) {} else if (std.mem.eql(u8, a.full_instr.opcode, "cmp")) {}
+}
+
+fn simulate_mov(a: assembly, map: *std.StringHashMap(u16)) !void {
     const dest = a.full_instr.dest_operand;
     switch (a.full_instr.src_operand) {
         .data => |data| {
@@ -248,6 +279,12 @@ fn run_asm(a: assembly, map: *std.StringHashMap(u16)) !void {
         },
         .memory => {},
     }
+}
+
+fn simulate_sub(a: assembly, map: *std.StringHashMap(u16)) !void {
+    std.debug.print("full_instr {any}\n", .{a.full_instr});
+
+    _ = .{map};
 }
 
 fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
