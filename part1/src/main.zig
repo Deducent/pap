@@ -107,25 +107,25 @@ const assembly = struct {
         }
     }
 
-    fn set_zeroflag(self: *assembly) !void {
+    fn set_zeroflag(self: *assembly) void {
         // 0000000000000000
         // 0000000001000000 or
         // 0000000001000000
         self.flags |= 0b1_000_000;
     }
 
-    fn unset_zeroflag(self: *assembly) !void {
+    fn unset_zeroflag(self: *assembly) void {
         // 0000100011000000
         // 1111111110111111 and
         // 0000100010000000
         self.flags &= 0b1111_1111_1011_1111;
     }
 
-    fn set_signflag(self: *assembly) !void {
+    fn set_signflag(self: *assembly) void {
         self.flags |= 0b10_000_000;
     }
 
-    fn unset_signflag(self: *assembly) !void {
+    fn unset_signflag(self: *assembly) void {
         self.flags &= 0b1111_1111_0111_1111;
     }
 
@@ -145,6 +145,7 @@ const assembly = struct {
     }
 };
 
+var a: assembly = assembly{};
 pub fn main() !void {
     var args = std.process.args();
     defer args.deinit();
@@ -168,7 +169,6 @@ pub fn main() !void {
     try writer.print("bits 16\n\n", .{});
 
     std.debug.print("bytes: {b}\n", .{bytes});
-    var a: assembly = assembly{};
 
     const allocator = std.heap.page_allocator;
     var map = std.StringHashMap(u16).init(allocator);
@@ -178,14 +178,14 @@ pub fn main() !void {
     print_hash_map(map);
     while (i < file_size) {
         switch (bytes[i] & 0b111111_00) {
-            0b100010_00 => try pattern_register_to_register(bytes, writer, "mov", &a), // reg -> reg
-            0b000000_00 => try pattern_register_to_register(bytes, writer, "add", &a), // reg -> reg
-            0b001010_00 => try pattern_register_to_register(bytes, writer, "sub", &a), // reg -> reg
-            0b001110_00 => try pattern_register_to_register(bytes, writer, "cmp", &a), // reg -> reg
-            0b100000_00 => try pattern_immediate_register_memory(bytes, writer, &a), // reg -> memory
-            0b000001_00 => try pattern_immediate_from_accumalator(bytes, writer, "add", &a),
-            0b001011_00 => try pattern_immediate_from_accumalator(bytes, writer, "sub", &a),
-            0b001111_00 => try pattern_immediate_from_accumalator(bytes, writer, "cmp", &a),
+            0b100010_00 => try pattern_register_to_register(bytes, writer, "mov"), // reg -> reg
+            0b000000_00 => try pattern_register_to_register(bytes, writer, "add"), // reg -> reg
+            0b001010_00 => try pattern_register_to_register(bytes, writer, "sub"), // reg -> reg
+            0b001110_00 => try pattern_register_to_register(bytes, writer, "cmp"), // reg -> reg
+            0b100000_00 => try pattern_immediate_register_memory(bytes, writer), // reg -> memory
+            0b000001_00 => try pattern_immediate_from_accumalator(bytes, writer, "add"),
+            0b001011_00 => try pattern_immediate_from_accumalator(bytes, writer, "sub"),
+            0b001111_00 => try pattern_immediate_from_accumalator(bytes, writer, "cmp"),
             0b011101_00,
             0b011111_00,
             0b011111_10,
@@ -206,10 +206,10 @@ pub fn main() !void {
             0b111000_01,
             0b111000_00,
             0b111000_11,
-            => try jump_pattern(bytes, writer, &a),
+            => try jump_pattern(bytes, writer),
             else => {
                 if (bytes[i] & 0b1111_0000 == 0b1011_0000) {
-                    try mov_immediate(bytes, writer, &a); // im -> reg
+                    try mov_immediate(bytes, writer); // im -> reg
                 } else {
                     std.debug.print("{b}\n", .{bytes[i]});
                     std.debug.print("{b}\n", .{bytes[i] & 0b111111_00});
@@ -217,7 +217,7 @@ pub fn main() !void {
                 }
             },
         }
-        try run_asm(a, &map);
+        try run_asm(&map);
         a.clear();
     }
     std.debug.assert(i == file_size);
@@ -237,34 +237,34 @@ fn set_hash_map(map: *std.StringHashMap(u16)) !void {
 
 fn print_hash_map(map: std.StringHashMap(u16)) void {
     std.debug.print("\nREGISTER STATE\n", .{});
-    std.debug.print("ax: {x}\n", .{map.get("ax").?});
-    std.debug.print("  al: {x}\n", .{get_low(map.get("ax").?)});
-    std.debug.print("  ah: {x}\n", .{get_high(map.get("ax").?)});
-    std.debug.print("bx: {x}\n", .{map.get("bx").?});
-    std.debug.print("  bl: {x}\n", .{get_low(map.get("bx").?)});
-    std.debug.print("  bh: {x}\n", .{get_high(map.get("bx").?)});
-    std.debug.print("cx: {x}\n", .{map.get("cx").?});
-    std.debug.print("  cl: {x}\n", .{get_low(map.get("cx").?)});
-    std.debug.print("  ch: {x}\n", .{get_high(map.get("cx").?)});
-    std.debug.print("dx: {x}\n", .{map.get("dx").?});
-    std.debug.print("  dl: {x}\n", .{get_low(map.get("dx").?)});
-    std.debug.print("  dh: {x}\n", .{get_high(map.get("dx").?)});
-    std.debug.print("sp: {x}\n", .{map.get("sp").?});
-    std.debug.print("bp: {x}\n", .{map.get("bp").?});
-    std.debug.print("si: {x}\n", .{map.get("si").?});
-    std.debug.print("di: {x}\n", .{map.get("di").?});
+    std.debug.print("ax: {d}\n", .{map.get("ax").?});
+    std.debug.print("  al: {d}\n", .{get_low(map.get("ax").?)});
+    std.debug.print("  ah: {d}\n", .{get_high(map.get("ax").?)});
+    std.debug.print("bx: {d}\n", .{map.get("bx").?});
+    std.debug.print("  bl: {d}\n", .{get_low(map.get("bx").?)});
+    std.debug.print("  bh: {d}\n", .{get_high(map.get("bx").?)});
+    std.debug.print("cx: {d}\n", .{map.get("cx").?});
+    std.debug.print("  cl: {d}\n", .{get_low(map.get("cx").?)});
+    std.debug.print("  ch: {d}\n", .{get_high(map.get("cx").?)});
+    std.debug.print("dx: {d}\n", .{map.get("dx").?});
+    std.debug.print("  dl: {d}\n", .{get_low(map.get("dx").?)});
+    std.debug.print("  dh: {d}\n", .{get_high(map.get("dx").?)});
+    std.debug.print("sp: {d}\n", .{map.get("sp").?});
+    std.debug.print("bp: {d}\n", .{map.get("bp").?});
+    std.debug.print("si: {d}\n", .{map.get("si").?});
+    std.debug.print("di: {d}\n", .{map.get("di").?});
     std.debug.print("\n", .{});
 }
 
-fn run_asm(a: assembly, map: *std.StringHashMap(u16)) !void {
+fn run_asm(map: *std.StringHashMap(u16)) !void {
     if (std.mem.eql(u8, a.full_instr.opcode, "mov")) {
-        try simulate_mov(a, map);
+        try simulate_mov(map);
     } else if (std.mem.eql(u8, a.full_instr.opcode, "sub")) {
-        try simulate_sub(a, map);
+        try simulate_sub(map);
     } else if (std.mem.eql(u8, a.full_instr.opcode, "add")) {} else if (std.mem.eql(u8, a.full_instr.opcode, "cmp")) {}
 }
 
-fn simulate_mov(a: assembly, map: *std.StringHashMap(u16)) !void {
+fn simulate_mov(map: *std.StringHashMap(u16)) !void {
     const dest = a.full_instr.dest_operand;
     switch (a.full_instr.src_operand) {
         .data => |data| {
@@ -281,13 +281,38 @@ fn simulate_mov(a: assembly, map: *std.StringHashMap(u16)) !void {
     }
 }
 
-fn simulate_sub(a: assembly, map: *std.StringHashMap(u16)) !void {
-    std.debug.print("full_instr {any}\n", .{a.full_instr});
+fn simulate_sub(map: *std.StringHashMap(u16)) !void {
+    std.debug.print("full_instr: {any}\n", .{a.full_instr});
+    std.debug.print("source: {s}\n", .{a.full_instr.src_operand.reg});
+    std.debug.print("destination {s}\n", .{a.full_instr.dest_operand});
+    const dest = a.full_instr.dest_operand;
+    switch (a.full_instr.src_operand) {
+        .reg => |reg| {
+            std.debug.print("{s} {s}, {s}; ", .{ a.full_instr.opcode, dest, reg });
+            const difference = map.get(dest).? - map.get(reg).?;
+            std.debug.print("difference: {b}\n", .{difference});
+            try map.put(dest, difference);
+            if (difference == 0) {
+                a.set_zeroflag();
+            }
+            if ((difference & 0b1000_000_000_000_000) > 0) {
+                a.set_signflag();
+            }
+        },
 
-    _ = .{map};
+        .data => |data| {
+            const difference = map.get(dest).? - data;
+            try map.put(dest, difference);
+            if (difference == 0) {
+                a.set_zeroflag();
+            }
+        },
+
+        .memory => |_| {},
+    }
 }
 
-fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
+fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
     a.byte_count = 2;
@@ -312,7 +337,7 @@ fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
     };
 }
 
-fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8, a: *assembly) !void {
+fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
     a.byte_count = 2;
@@ -379,7 +404,7 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
     i += a.byte_count;
 }
 
-fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
+fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
     a.s = if ((byte1 & 0b000000_1_0) > 0) 1 else 0;
@@ -449,7 +474,7 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer, a:
     i += a.byte_count;
 }
 
-fn pattern_immediate_from_accumalator(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8, a: *assembly) !void {
+fn pattern_immediate_from_accumalator(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8) !void {
     const byte1 = bytes[i];
     const byte2 = bytes[i + 1];
     var byte3: u16 = undefined;
@@ -481,7 +506,7 @@ fn get_mod_field(byte: u8) u2 {
     };
 }
 
-fn jump_pattern(bytes: []u8, writer: std.fs.File.Writer, a: *assembly) !void {
+fn jump_pattern(bytes: []u8, writer: std.fs.File.Writer) !void {
     const ip_inc8: u8 = bytes[i + 1];
 
     const opcode = switch (bytes[i] & 0b11111111) {
