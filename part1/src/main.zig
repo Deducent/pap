@@ -114,6 +114,13 @@ const assembly = struct {
         self.flags |= 0b1_000_000;
     }
 
+    fn is_set_zeroflag(self: *assembly) bool {
+        // 0000000000000000
+        // 0000000001000000 or
+        // 0000000001000000
+        return (self.flags & 0b1_000_000) > 0;
+    }
+
     fn unset_zeroflag(self: *assembly) void {
         // 0000100011000000
         // 1111111110111111 and
@@ -123,6 +130,10 @@ const assembly = struct {
 
     fn set_signflag(self: *assembly) void {
         self.flags |= 0b10_000_000;
+    }
+
+    fn is_set_signflag(self: *assembly) bool {
+        return (self.flags & 0b10_000_000) > 0;
     }
 
     fn unset_signflag(self: *assembly) void {
@@ -147,14 +158,14 @@ const assembly = struct {
 
 var a: assembly = assembly{};
 pub fn main() !void {
-    var args = std.process.args();
-    defer args.deinit();
-
-    _ = args.skip();
-    const path: ?[]const u8 = args.next();
-
-    var file = try std.fs.cwd().openFile(path.?, .{});
-    // var file = try std.fs.cwd().openFile("../listing_0044_register_movs/listing_0044_register_movs", .{}); //INFO: for debugging
+    // var args = std.process.args();
+    // defer args.deinit();
+    //
+    // _ = args.skip();
+    // const path: ?[]const u8 = args.next();
+    //
+    // var file = try std.fs.cwd().openFile(path.?, .{});
+    var file = try std.fs.cwd().openFile("../listing_0046_add_sub_cmp/listing_0046_add_sub_cmp", .{}); //INFO: for debugging
     defer file.close();
 
     const reader = file.reader();
@@ -261,7 +272,9 @@ fn run_asm(map: *std.StringHashMap(u16)) !void {
         try simulate_mov(map);
     } else if (std.mem.eql(u8, a.full_instr.opcode, "sub")) {
         try simulate_sub(map);
-    } else if (std.mem.eql(u8, a.full_instr.opcode, "add")) {} else if (std.mem.eql(u8, a.full_instr.opcode, "cmp")) {}
+    } else if (std.mem.eql(u8, a.full_instr.opcode, "add")) {
+        try simulate_add(map);
+    } else if (std.mem.eql(u8, a.full_instr.opcode, "cmp")) {}
 }
 
 fn simulate_mov(map: *std.StringHashMap(u16)) !void {
@@ -269,7 +282,7 @@ fn simulate_mov(map: *std.StringHashMap(u16)) !void {
     switch (a.full_instr.src_operand) {
         .data => |data| {
             std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
-            std.debug.print(" {s} ({d} -> {d})\n", .{ dest, map.get(a.reg).?, a.data.? });
+            std.debug.print(" {s} ({d} -> {d})\n", .{ dest, map.get(dest).?, a.data.? });
             try map.put(a.reg, a.data.?);
         },
         .reg => |reg| {
@@ -281,34 +294,81 @@ fn simulate_mov(map: *std.StringHashMap(u16)) !void {
     }
 }
 
-fn simulate_sub(map: *std.StringHashMap(u16)) !void {
-    std.debug.print("full_instr: {any}\n", .{a.full_instr});
-    std.debug.print("source: {s}\n", .{a.full_instr.src_operand.reg});
-    std.debug.print("destination {s}\n", .{a.full_instr.dest_operand});
+fn simulate_add(map: *std.StringHashMap(u16)) !void {
     const dest = a.full_instr.dest_operand;
+    var sum: u16 = 0;
     switch (a.full_instr.src_operand) {
         .reg => |reg| {
-            std.debug.print("{s} {s}, {s}; ", .{ a.full_instr.opcode, dest, reg });
-            const difference = map.get(dest).? - map.get(reg).?;
-            std.debug.print("difference: {b}\n", .{difference});
-            try map.put(dest, difference);
-            if (difference == 0) {
-                a.set_zeroflag();
-            }
-            if ((difference & 0b1000_000_000_000_000) > 0) {
-                a.set_signflag();
-            }
+            std.debug.print("{s} {s}, {s};", .{ a.full_instr.opcode, dest, reg });
+            sum = map.get(dest).? + map.get(reg).?;
         },
 
         .data => |data| {
-            const difference = map.get(dest).? - data;
-            try map.put(dest, difference);
-            if (difference == 0) {
-                a.set_zeroflag();
-            }
+            std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
+            sum = map.get(dest).? + data;
         },
 
         .memory => |_| {},
+    }
+
+    std.debug.print(" {s} ({d} -> {d})", .{ dest, map.get(dest).?, sum });
+    try map.put(dest, sum);
+
+    try handle_flags(sum);
+
+    std.debug.print("\n", .{});
+}
+
+fn simulate_cmp(map: *std.StringHashMap(u16)) void {
+    _ = .{map};
+}
+
+fn simulate_sub(map: *std.StringHashMap(u16)) !void {
+    const dest = a.full_instr.dest_operand;
+    var difference: u16 = 0;
+    switch (a.full_instr.src_operand) {
+        .reg => |reg| {
+            std.debug.print("{s} {s}, {s};", .{ a.full_instr.opcode, dest, reg });
+            difference = map.get(dest).? - map.get(reg).?;
+        },
+
+        .data => |data| {
+            std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
+            difference = map.get(dest).? - data;
+        },
+
+        .memory => |_| {},
+    }
+
+    std.debug.print(" {s} ({d} -> {d})", .{ dest, map.get(dest).?, difference });
+    try map.put(dest, difference);
+
+    try handle_flags(difference);
+
+    std.debug.print("\n", .{});
+}
+
+fn handle_flags(value: u16) !void {
+    if (value == 0) {
+        a.set_zeroflag();
+    } else {
+        a.unset_zeroflag();
+    }
+
+    if ((value & 0b1000_000_000_000_000) > 0) {
+        a.set_signflag();
+    } else {
+        a.unset_signflag();
+    }
+
+    if (a.is_set_zeroflag() or a.is_set_signflag()) {
+        var flags: []const u8 = "";
+        var buffer: [1024]u8 = [_]u8{undefined} ** 1024;
+
+        if (a.is_set_zeroflag()) flags = try std.fmt.bufPrint(&a.buffer, "{s}{s}", .{ flags, "Z" });
+        if (a.is_set_signflag()) flags = try std.fmt.bufPrint(&buffer, "{s}{s}", .{ flags, "S" });
+
+        std.debug.print(" Flags: -> {s}", .{flags});
     }
 }
 
