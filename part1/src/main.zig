@@ -274,7 +274,9 @@ fn run_asm(map: *std.StringHashMap(u16)) !void {
         try simulate_sub(map);
     } else if (std.mem.eql(u8, a.full_instr.opcode, "add")) {
         try simulate_add(map);
-    } else if (std.mem.eql(u8, a.full_instr.opcode, "cmp")) {}
+    } else if (std.mem.eql(u8, a.full_instr.opcode, "cmp")) {
+        try simulate_cmp(map);
+    }
 }
 
 fn simulate_mov(map: *std.StringHashMap(u16)) !void {
@@ -319,8 +321,30 @@ fn simulate_add(map: *std.StringHashMap(u16)) !void {
     std.debug.print("\n", .{});
 }
 
-fn simulate_cmp(map: *std.StringHashMap(u16)) void {
-    _ = .{map};
+fn simulate_cmp(map: *std.StringHashMap(u16)) !void {
+    //NOTE: Simulate works like sub without setting the difference into the destination
+    //Because subtracting the operands: if the difference is 0, then both operands are the same. Else they aren't.
+    const dest = a.full_instr.dest_operand;
+    var difference: u16 = 0;
+    switch (a.full_instr.src_operand) {
+        .reg => |reg| {
+            std.debug.print("{s} {s}, {s};", .{ a.full_instr.opcode, dest, reg });
+            difference = map.get(dest).? - map.get(reg).?;
+        },
+
+        .data => |data| {
+            std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
+            difference = map.get(dest).? - data;
+        },
+
+        .memory => |_| {},
+    }
+
+    std.debug.print(" {s} ({d} -> {d})", .{ dest, map.get(dest).?, difference });
+
+    try handle_flags(difference);
+
+    std.debug.print("\n", .{});
 }
 
 fn simulate_sub(map: *std.StringHashMap(u16)) !void {
@@ -523,7 +547,7 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
     }
 
     a.full_instr.opcode = instr;
-    a.full_instr.src_operand.data = a.data.?;
+    a.full_instr.src_operand = source_operand{ .data = a.data.? };
 
     switch (a.mod) {
         0b01 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s} [{s} + {d}]", .{ a.byte_word, a.r_m, a.disp_l }),
@@ -552,7 +576,7 @@ fn pattern_immediate_from_accumalator(bytes: []u8, writer: std.fs.File.Writer, i
     }
     try writer.print("{s} {s}, {d}\n", .{ instr_type, a.reg, a.data.? });
     a.full_instr.opcode = instr_type;
-    a.full_instr.src_operand.data = a.data.?;
+    a.full_instr.src_operand = source_operand{ .data = a.data.? };
     a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s}", .{a.reg});
 }
 
