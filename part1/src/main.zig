@@ -15,15 +15,58 @@ fn get_high(value: u16) u8 {
     return @truncate((value & 0b1111_1111_0000_0000) >> 8);
 }
 
-fn set_low(reg: *u16, value: u16) void {
-    reg.* &= 0b11111111_00000000;
-    reg.* |= @as(u16, @truncate(value));
+fn set_low(old_value: *u16, value: u16) void {
+    old_value.* &= 0b11111111_00000000;
+    const low_part: u16 = value & 0b00000000_11111111;
+    old_value.* |= low_part;
 }
 
-fn set_high(reg: *u16, value: u16) void {
-    reg.* &= 0b00000000_11111111;
-    reg.* |= @as(u16, @truncate(value)) << 8;
+fn set_high(old_val: *u16, value: u16) void {
+    old_val.* &= 0b00000000_11111111;
+    const high_part: u16 = value & 0b11111111_00000000;
+    old_val.* |= high_part;
 }
+
+const cpu_regs = struct {
+    map: std.StringHashMap(u16),
+
+    fn get(self: *cpu_regs, key: []const u8) u16 {
+        const parent_register = switch (key[0]) {
+            'a' => "ax",
+            'b' => "bx",
+            'c' => "cx",
+            'd' => "dx",
+            else => "",
+        };
+        if (key[1] == 'l') {
+            return get_low(self.map.get(parent_register).?);
+        } else if (key[1] == 'h') {
+            return get_high(self.map.get(parent_register).?);
+        }
+        return self.map.get(key).?;
+    }
+
+    fn put(self: *cpu_regs, key: []const u8, value: u16) !void {
+        const parent_register = switch (key[0]) {
+            'a' => "ax",
+            'b' => "bx",
+            'c' => "cx",
+            'd' => "dx",
+            else => "",
+        };
+
+        if (key[1] == 'l') {
+            var previous_value: u16 = self.map.get(parent_register).?;
+            set_low(&previous_value, value);
+            try self.map.put(parent_register, previous_value);
+        } else if (key[1] == 'h') {
+            var previous_value: u16 = self.map.get(parent_register).?;
+            set_high(&previous_value, value);
+            try self.map.put(parent_register, previous_value);
+        }
+        try self.map.put(key, value);
+    }
+};
 
 const assembly = struct {
     buffer: [1024]u8 = [_]u8{undefined} ** 1024,
@@ -158,14 +201,14 @@ const assembly = struct {
 
 var a: assembly = assembly{};
 pub fn main() !void {
-    // var args = std.process.args();
-    // defer args.deinit();
-    //
-    // _ = args.skip();
-    // const path: ?[]const u8 = args.next();
-    //
-    // var file = try std.fs.cwd().openFile(path.?, .{});
-    var file = try std.fs.cwd().openFile("../listing_0046_add_sub_cmp/listing_0046_add_sub_cmp", .{}); //INFO: for debugging
+    var args = std.process.args();
+    defer args.deinit();
+
+    _ = args.skip();
+    const path: ?[]const u8 = args.next();
+
+    var file = try std.fs.cwd().openFile(path.?, .{});
+    // var file = try std.fs.cwd().openFile("../listing_0046_add_sub_cmp/listing_0046_add_sub_cmp", .{}); //INFO: for debugging
     defer file.close();
 
     const reader = file.reader();
@@ -173,7 +216,7 @@ pub fn main() !void {
     const file_size = try reader.readAll(&buffer);
     const bytes = buffer[0..file_size];
 
-    const test_file = try std.fs.cwd().createFile("test.asm", .{ .read = true });
+    const test_file = try std.fs.cwd().createFile("test2.asm", .{ .read = true });
     defer test_file.close();
 
     const writer = test_file.writer();
@@ -186,7 +229,8 @@ pub fn main() !void {
     defer map.deinit();
     try set_hash_map(&map);
 
-    print_hash_map(map);
+    var cpu_register: cpu_regs = cpu_regs{ .map = map };
+    print_hash_map(cpu_register.map);
     while (i < file_size) {
         switch (bytes[i] & 0b111111_00) {
             0b100010_00 => try pattern_register_to_register(bytes, writer, "mov"), // reg -> reg
@@ -228,11 +272,11 @@ pub fn main() !void {
                 }
             },
         }
-        try run_asm(&map);
+        try run_asm(&cpu_register);
         a.clear();
     }
     std.debug.assert(i == file_size);
-    print_hash_map(map);
+    print_hash_map(cpu_register.map);
 }
 
 fn set_hash_map(map: *std.StringHashMap(u16)) !void {
@@ -267,61 +311,62 @@ fn print_hash_map(map: std.StringHashMap(u16)) void {
     std.debug.print("\n", .{});
 }
 
-fn run_asm(map: *std.StringHashMap(u16)) !void {
+fn run_asm(regs: *cpu_regs) !void {
     if (std.mem.eql(u8, a.full_instr.opcode, "mov")) {
-        try simulate_mov(map);
+        try simulate_mov(regs);
     } else if (std.mem.eql(u8, a.full_instr.opcode, "sub")) {
-        try simulate_sub(map);
+        try simulate_sub(regs);
     } else if (std.mem.eql(u8, a.full_instr.opcode, "add")) {
-        try simulate_add(map);
+        try simulate_add(regs);
     } else if (std.mem.eql(u8, a.full_instr.opcode, "cmp")) {
-        try simulate_cmp(map);
+        try simulate_cmp(regs);
     }
 }
 
-fn simulate_mov(map: *std.StringHashMap(u16)) !void {
-    const dest = a.full_instr.dest_operand;
+fn simulate_mov(regs: *cpu_regs) !void {
+    const dest: []const u8 = a.full_instr.dest_operand;
+    var new_value: u16 = undefined;
     switch (a.full_instr.src_operand) {
         .data => |data| {
             std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
-            std.debug.print(" {s} ({d} -> {d})\n", .{ dest, map.get(dest).?, a.data.? });
-            try map.put(a.reg, a.data.?);
+            new_value = data;
         },
         .reg => |reg| {
             std.debug.print("{s} {s}, {s}; ", .{ a.full_instr.opcode, dest, reg });
-            std.debug.print(" {s} ({d} -> {d})\n", .{ dest, map.get(dest).?, map.get(reg).? });
-            try map.put(dest, map.get(reg).?);
+            new_value = regs.get(reg);
         },
         .memory => {},
     }
+    std.debug.print(" {s} ({d} -> {d})\n", .{ dest, regs.get(dest), new_value });
+    try regs.put(dest, new_value);
 }
 
-fn simulate_add(map: *std.StringHashMap(u16)) !void {
+fn simulate_add(regs: *cpu_regs) !void {
     const dest = a.full_instr.dest_operand;
     var sum: u16 = 0;
     switch (a.full_instr.src_operand) {
         .reg => |reg| {
             std.debug.print("{s} {s}, {s};", .{ a.full_instr.opcode, dest, reg });
-            sum = map.get(dest).? + map.get(reg).?;
+            sum = regs.get(dest) + regs.get(reg);
         },
 
         .data => |data| {
             std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
-            sum = map.get(dest).? + data;
+            sum = regs.get(dest) + data;
         },
 
         .memory => |_| {},
     }
 
-    std.debug.print(" {s} ({d} -> {d})", .{ dest, map.get(dest).?, sum });
-    try map.put(dest, sum);
+    std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), sum });
+    try regs.put(dest, sum);
 
     try handle_flags(sum);
 
     std.debug.print("\n", .{});
 }
 
-fn simulate_cmp(map: *std.StringHashMap(u16)) !void {
+fn simulate_cmp(regs: *cpu_regs) !void {
     //NOTE: Simulate works like sub without setting the difference into the destination
     //Because subtracting the operands: if the difference is 0, then both operands are the same. Else they aren't.
     const dest = a.full_instr.dest_operand;
@@ -329,43 +374,41 @@ fn simulate_cmp(map: *std.StringHashMap(u16)) !void {
     switch (a.full_instr.src_operand) {
         .reg => |reg| {
             std.debug.print("{s} {s}, {s};", .{ a.full_instr.opcode, dest, reg });
-            difference = map.get(dest).? - map.get(reg).?;
+            difference = regs.get(dest) - regs.get(reg);
         },
 
         .data => |data| {
             std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
-            difference = map.get(dest).? - data;
+            difference = regs.get(dest) - data;
         },
 
         .memory => |_| {},
     }
-
-    std.debug.print(" {s} ({d} -> {d})", .{ dest, map.get(dest).?, difference });
 
     try handle_flags(difference);
 
     std.debug.print("\n", .{});
 }
 
-fn simulate_sub(map: *std.StringHashMap(u16)) !void {
+fn simulate_sub(regs: *cpu_regs) !void {
     const dest = a.full_instr.dest_operand;
     var difference: u16 = 0;
     switch (a.full_instr.src_operand) {
         .reg => |reg| {
             std.debug.print("{s} {s}, {s};", .{ a.full_instr.opcode, dest, reg });
-            difference = map.get(dest).? - map.get(reg).?;
+            difference = regs.get(dest) - regs.get(reg);
         },
 
         .data => |data| {
             std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
-            difference = map.get(dest).? - data;
+            difference = regs.get(dest) - data;
         },
 
         .memory => |_| {},
     }
 
-    std.debug.print(" {s} ({d} -> {d})", .{ dest, map.get(dest).?, difference });
-    try map.put(dest, difference);
+    std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), difference });
+    try regs.put(dest, difference);
 
     try handle_flags(difference);
 
