@@ -213,7 +213,7 @@ pub fn main() !void {
     const path: ?[]const u8 = args.next();
 
     var file = try std.fs.cwd().openFile(path.?, .{});
-    // var file = try std.fs.cwd().openFile("../listing_0046_add_sub_cmp/listing_0046_add_sub_cmp", .{}); //INFO: for debugging
+    // var file = try std.fs.cwd().openFile("../listing_0048_ip_register/listing_0048_ip_register", .{}); //INFO: for debugging
     defer file.close();
 
     const reader = file.reader();
@@ -342,8 +342,10 @@ fn simulate_mov(regs: *cpu_regs) !void {
         },
         .memory => {},
     }
-    std.debug.print(" {s} ({d} -> {d})\n", .{ dest, regs.get(dest), new_value });
+    std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), new_value });
+    std.debug.print(" ip: {d} -> {d}", .{ ip - a.byte_count, ip });
     try regs.put(dest, new_value);
+    std.debug.print("\n", .{});
 }
 
 fn simulate_add(regs: *cpu_regs) !void {
@@ -364,6 +366,7 @@ fn simulate_add(regs: *cpu_regs) !void {
     }
 
     std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), sum });
+    std.debug.print(" ip: {d} -> {d}", .{ ip - a.byte_count, ip });
     try regs.put(dest, sum);
 
     try handle_flags(sum);
@@ -413,6 +416,7 @@ fn simulate_sub(regs: *cpu_regs) !void {
     }
 
     std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), difference });
+    std.debug.print(" ip: {d} -> {d}", .{ ip - a.byte_count, ip });
     try regs.put(dest, difference);
 
     try handle_flags(difference);
