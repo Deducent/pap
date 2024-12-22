@@ -79,6 +79,7 @@ const assembly = struct {
         opcode: []const u8,
         src_operand: source_operand,
         dest_operand: []const u8,
+        ip_inc: i8 = 0,
     } = .{
         .opcode = undefined,
         .dest_operand = undefined,
@@ -206,14 +207,14 @@ const assembly = struct {
 
 var a: assembly = assembly{};
 pub fn main() !void {
-    // var args = std.process.args();
-    // defer args.deinit();
-    //
-    // _ = args.skip();
-    // const path: ?[]const u8 = args.next();
-    //
-    // var file = try std.fs.cwd().openFile(path.?, .{});
-    var file = try std.fs.cwd().openFile("../listing_0049_conditional_jumps/listing_0049_conditional_jumps", .{}); //INFO: for debugging
+    var args = std.process.args();
+    defer args.deinit();
+
+    _ = args.skip();
+    const path: ?[]const u8 = args.next();
+
+    var file = try std.fs.cwd().openFile(path.?, .{});
+    // var file = try std.fs.cwd().openFile("../listing_0049_conditional_jumps/listing_0049_conditional_jumps", .{}); //INFO: for debugging
     defer file.close();
 
     const reader = file.reader();
@@ -326,15 +327,23 @@ fn run_asm(regs: *cpu_regs) !void {
         try simulate_add(regs);
     } else if (std.mem.eql(u8, a.full_instr.opcode, "cmp")) {
         try simulate_cmp(regs);
-    } else if (std.mem.eql(u8, a.full_instr.opcode, "jne")) {
-        try simulate_jmp(regs);
+    } else if (a.full_instr.opcode[0] == 'j' or a.full_instr.opcode[0] == 'l') {
+        try simulate_jmp();
     }
 }
 
-fn simulate_jmp(regs: *cpu_regs) !void {
-    _ = .{regs};
-    std.debug.print("{s} {s}", .{ a.full_instr.opcode, a.full_instr.dest_operand });
-    std.debug.print(" ip: {d} -> {d}", .{ ip - a.byte_count, ip });
+fn simulate_jmp() !void {
+    std.debug.print("{s} {d}", .{ a.full_instr.opcode, a.full_instr.ip_inc });
+
+    const ip_inc = @as(u8, @intCast(a.full_instr.ip_inc * -1));
+
+    if (std.mem.eql(u8, "jne", a.full_instr.opcode)) {
+        std.debug.print(" ip: ({d}", .{ip});
+        if (!a.is_set_zeroflag()) {
+            ip = ip - ip_inc;
+        }
+        std.debug.print(" -> {d})", .{ip});
+    }
     std.debug.print("\n", .{});
 }
 
@@ -353,7 +362,7 @@ fn simulate_mov(regs: *cpu_regs) !void {
         .memory => {},
     }
     std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), new_value });
-    std.debug.print(" ip: {d} -> {d}", .{ ip - a.byte_count, ip });
+    std.debug.print(" ip: ({d} -> {d})", .{ ip - a.byte_count, ip });
     try regs.put(dest, new_value);
     std.debug.print("\n", .{});
 }
@@ -376,7 +385,7 @@ fn simulate_add(regs: *cpu_regs) !void {
     }
 
     std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), sum });
-    std.debug.print(" ip: {d} -> {d}", .{ ip - a.byte_count, ip });
+    std.debug.print(" ip: ({d} -> {d})", .{ ip - a.byte_count, ip });
     try regs.put(dest, sum);
 
     try handle_flags(sum);
@@ -426,7 +435,7 @@ fn simulate_sub(regs: *cpu_regs) !void {
     }
 
     std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), difference });
-    std.debug.print(" ip: {d} -> {d}", .{ ip - a.byte_count, ip });
+    std.debug.print(" ip: ({d} -> {d})", .{ ip - a.byte_count, ip });
     try regs.put(dest, difference);
 
     try handle_flags(difference);
@@ -681,6 +690,7 @@ fn jump_pattern(bytes: []u8, writer: std.fs.File.Writer) !void {
 
     try writer.print("{s} {d}\n", .{ opcode, ip_inc8 });
     a.full_instr.opcode = opcode;
-    a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{d}", .{ip_inc8}); // FIXME: not right
-    ip += 2;
+    a.full_instr.ip_inc = @as(i8, @bitCast(ip_inc8));
+    a.byte_count = 2;
+    ip += a.byte_count;
 }
