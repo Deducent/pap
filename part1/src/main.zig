@@ -206,14 +206,14 @@ const assembly = struct {
 
 var a: assembly = assembly{};
 pub fn main() !void {
-    var args = std.process.args();
-    defer args.deinit();
-
-    _ = args.skip();
-    const path: ?[]const u8 = args.next();
-
-    var file = try std.fs.cwd().openFile(path.?, .{});
-    // var file = try std.fs.cwd().openFile("../listing_0048_ip_register/listing_0048_ip_register", .{}); //INFO: for debugging
+    // var args = std.process.args();
+    // defer args.deinit();
+    //
+    // _ = args.skip();
+    // const path: ?[]const u8 = args.next();
+    //
+    // var file = try std.fs.cwd().openFile(path.?, .{});
+    var file = try std.fs.cwd().openFile("../listing_0049_conditional_jumps/listing_0049_conditional_jumps", .{}); //INFO: for debugging
     defer file.close();
 
     const reader = file.reader();
@@ -282,6 +282,7 @@ pub fn main() !void {
     }
     std.debug.assert(ip == file_size);
     print_hash_map(cpu_register.map);
+    std.debug.print("ip: {d}\n", .{ip});
 }
 
 fn set_hash_map(map: *std.StringHashMap(u16)) !void {
@@ -325,7 +326,16 @@ fn run_asm(regs: *cpu_regs) !void {
         try simulate_add(regs);
     } else if (std.mem.eql(u8, a.full_instr.opcode, "cmp")) {
         try simulate_cmp(regs);
+    } else if (std.mem.eql(u8, a.full_instr.opcode, "jne")) {
+        try simulate_jmp(regs);
     }
+}
+
+fn simulate_jmp(regs: *cpu_regs) !void {
+    _ = .{regs};
+    std.debug.print("{s} {s}", .{ a.full_instr.opcode, a.full_instr.dest_operand });
+    std.debug.print(" ip: {d} -> {d}", .{ ip - a.byte_count, ip });
+    std.debug.print("\n", .{});
 }
 
 fn simulate_mov(regs: *cpu_regs) !void {
@@ -671,6 +681,6 @@ fn jump_pattern(bytes: []u8, writer: std.fs.File.Writer) !void {
 
     try writer.print("{s} {d}\n", .{ opcode, ip_inc8 });
     a.full_instr.opcode = opcode;
-    a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s} {d}", .{ opcode, ip_inc8 }); // FIXME: not right
+    a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{d}", .{ip_inc8}); // FIXME: not right
     ip += 2;
 }
