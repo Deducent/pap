@@ -1,6 +1,8 @@
 const std = @import("std");
 var ip: u8 = 0;
 
+var memory: [1_000_000]u8 = [1_000_000]u8{0};
+
 const source_operand = union(enum) {
     reg: []const u8,
     memory: []const u8,
@@ -207,14 +209,14 @@ const assembly = struct {
 
 var a: assembly = assembly{};
 pub fn main() !void {
-    var args = std.process.args();
-    defer args.deinit();
-
-    _ = args.skip();
-    const path: ?[]const u8 = args.next();
-
-    var file = try std.fs.cwd().openFile(path.?, .{});
-    // var file = try std.fs.cwd().openFile("../listing_0049_conditional_jumps/listing_0049_conditional_jumps", .{}); //INFO: for debugging
+    // var args = std.process.args();
+    // defer args.deinit();
+    //
+    // _ = args.skip();
+    // const path: ?[]const u8 = args.next();
+    //
+    // var file = try std.fs.cwd().openFile(path.?, .{});
+    var file = try std.fs.cwd().openFile("../listing_0051_memory_mov/listing_0051_memory_mov", .{}); //INFO: for debugging
     defer file.close();
 
     const reader = file.reader();
@@ -244,6 +246,7 @@ pub fn main() !void {
             0b001010_00 => try pattern_register_to_register(bytes, writer, "sub"), // reg -> reg
             0b001110_00 => try pattern_register_to_register(bytes, writer, "cmp"), // reg -> reg
             0b100000_00 => try pattern_immediate_register_memory(bytes, writer), // reg -> memory
+            0b110001_00 => try pattern_immediate_register_memory(bytes, writer),
             0b000001_00 => try pattern_immediate_from_accumalator(bytes, writer, "add"),
             0b001011_00 => try pattern_immediate_from_accumalator(bytes, writer, "sub"),
             0b001111_00 => try pattern_immediate_from_accumalator(bytes, writer, "cmp"),
@@ -272,6 +275,7 @@ pub fn main() !void {
                 if (bytes[ip] & 0b1111_0000 == 0b1011_0000) {
                     try mov_immediate(bytes, writer); // im -> reg
                 } else {
+                    std.debug.print("ip: {d}\n", .{ip});
                     std.debug.print("{b}\n", .{bytes[ip]});
                     std.debug.print("{b}\n", .{bytes[ip] & 0b111111_00});
                     unreachable;
@@ -567,12 +571,18 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
     a.mod = get_mod_field(byte2);
     a.byte_count = 2;
 
-    const instr = switch (byte2 & 0b00_111_000) {
-        0b00_000_000 => "add",
-        0b00_101_000 => "sub",
-        0b00_111_000 => "cmp",
-        else => unreachable,
-    };
+    var instr: []const u8 = "";
+    if (byte1 & 0b111111_00 == 0b100000_00) {
+        instr = switch (byte2 & 0b00_111_000) {
+            0b00_000_000 => "add",
+            0b00_101_000 => "sub",
+            0b00_111_000 => "cmp",
+            else => unreachable,
+        };
+    } else {
+        instr = "mov";
+    }
+
     switch (a.mod) {
         0b11 => {
             a.set_register_name(byte2, &a.r_m);
