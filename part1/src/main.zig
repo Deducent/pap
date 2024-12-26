@@ -1,7 +1,8 @@
 const std = @import("std");
 var ip: u8 = 0;
+var memory: [1_000_000]u8 = [_]u8{0} ** 1_000_000;
 
-var memory: [1_000_000]u8 = [1_000_000]u8{0};
+var global_buffer: [1024]u8 = [_]u8{0} ** 1024;
 
 const source_operand = union(enum) {
     reg: []const u8,
@@ -37,43 +38,63 @@ fn subtract(minuend: u16, subtrahend: u16) u16 {
 const cpu_regs = struct {
     map: std.StringHashMap(u16),
 
-    fn get(self: *cpu_regs, key: []const u8) u16 {
-        const parent_register = switch (key[0]) {
-            'a' => "ax",
-            'b' => "bx",
-            'c' => "cx",
-            'd' => "dx",
-            else => "",
-        };
+    fn get(self: *cpu_regs, key: []const u8) !u16 {
+        const parent_register = get_parent_register(key[0]);
+
         if (key[1] == 'l') {
             return get_low(self.map.get(parent_register).?);
         } else if (key[1] == 'h') {
             return get_high(self.map.get(parent_register).?);
+        } else if (key.len > 2) {
+            const index = try std.fmt.parseInt(u16, key[6 .. key.len - 1], 10);
+
+            if (std.mem.eql(u8, key[0..4], "word")) {
+                return (@as(u16, memory[index + 1]) << 8) | memory[index];
+            } else {
+                return memory[index];
+            }
         }
         return self.map.get(key).?;
     }
 
     fn put(self: *cpu_regs, key: []const u8, value: u16) !void {
-        const parent_register = switch (key[0]) {
-            'a' => "ax",
-            'b' => "bx",
-            'c' => "cx",
-            'd' => "dx",
-            else => "",
-        };
+        const parent_register = get_parent_register(key[0]);
 
         if (key[1] == 'l') {
             var previous_value: u16 = self.map.get(parent_register).?;
             set_low(&previous_value, value);
             try self.map.put(parent_register, previous_value);
+            return;
         } else if (key[1] == 'h') {
             var previous_value: u16 = self.map.get(parent_register).?;
             set_high(&previous_value, value);
             try self.map.put(parent_register, previous_value);
+            return;
+        } else if (key.len > 2) {
+            const index = try std.fmt.parseInt(u16, key[6 .. key.len - 1], 10);
+
+            if (std.mem.eql(u8, key[0..4], "word")) {
+                memory[index] = get_low(value);
+                memory[index + 1] = get_high(value);
+            } else {
+                memory[index] = get_low(value);
+            }
+            return;
         }
+
         try self.map.put(key, value);
     }
 };
+
+fn get_parent_register(denoter_char: u8) []const u8 {
+    return switch (denoter_char) {
+        'a' => "ax",
+        'b' => "bx",
+        'c' => "cx",
+        'd' => "dx",
+        else => "",
+    };
+}
 
 const assembly = struct {
     buffer: [1024]u8 = [_]u8{undefined} ** 1024,
@@ -153,8 +174,10 @@ const assembly = struct {
             self.byte_count += 1;
             self.data = (self.data.? << 8) | byte_next;
         } else {
-            self.data = bytes[ip + self.byte_count];
-            self.byte_count += 1;
+            if (a.data == null) {
+                self.data = bytes[ip + self.byte_count];
+                self.byte_count += 1;
+            }
         }
     }
 
@@ -361,11 +384,11 @@ fn simulate_mov(regs: *cpu_regs) !void {
         },
         .reg => |reg| {
             std.debug.print("{s} {s}, {s}; ", .{ a.full_instr.opcode, dest, reg });
-            new_value = regs.get(reg);
+            new_value = try regs.get(reg);
         },
         .memory => {},
     }
-    std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), new_value });
+    std.debug.print(" {s} ({d} -> {d})", .{ dest, try regs.get(dest), new_value });
     std.debug.print(" ip: ({d} -> {d})", .{ ip - a.byte_count, ip });
     try regs.put(dest, new_value);
     std.debug.print("\n", .{});
@@ -377,18 +400,18 @@ fn simulate_add(regs: *cpu_regs) !void {
     switch (a.full_instr.src_operand) {
         .reg => |reg| {
             std.debug.print("{s} {s}, {s};", .{ a.full_instr.opcode, dest, reg });
-            sum = regs.get(dest) + regs.get(reg);
+            sum = try regs.get(dest) + try regs.get(reg);
         },
 
         .data => |data| {
             std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
-            sum = regs.get(dest) + data;
+            sum = try regs.get(dest) + data;
         },
 
         .memory => |_| {},
     }
 
-    std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), sum });
+    std.debug.print(" {s} ({d} -> {d})", .{ dest, try regs.get(dest), sum });
     std.debug.print(" ip: ({d} -> {d})", .{ ip - a.byte_count, ip });
     try regs.put(dest, sum);
 
@@ -405,12 +428,12 @@ fn simulate_cmp(regs: *cpu_regs) !void {
     switch (a.full_instr.src_operand) {
         .reg => |reg| {
             std.debug.print("{s} {s}, {s};", .{ a.full_instr.opcode, dest, reg });
-            difference = subtract(regs.get(dest), regs.get(reg));
+            difference = subtract(try regs.get(dest), try regs.get(reg));
         },
 
         .data => |data| {
             std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
-            difference = subtract(regs.get(dest), data);
+            difference = subtract(try regs.get(dest), data);
         },
 
         .memory => |_| {},
@@ -427,18 +450,18 @@ fn simulate_sub(regs: *cpu_regs) !void {
     switch (a.full_instr.src_operand) {
         .reg => |reg| {
             std.debug.print("{s} {s}, {s};", .{ a.full_instr.opcode, dest, reg });
-            difference = subtract(regs.get(dest), regs.get(reg));
+            difference = subtract(try regs.get(dest), try regs.get(reg));
         },
 
         .data => |data| {
             std.debug.print("{s} {s}, {d}; ", .{ a.full_instr.opcode, dest, data });
-            difference = subtract(regs.get(dest), data);
+            difference = subtract(try regs.get(dest), data);
         },
 
         .memory => |_| {},
     }
 
-    std.debug.print(" {s} ({d} -> {d})", .{ dest, regs.get(dest), difference });
+    std.debug.print(" {s} ({d} -> {d})", .{ dest, try regs.get(dest), difference });
     std.debug.print(" ip: ({d} -> {d})", .{ ip - a.byte_count, ip });
     try regs.put(dest, difference);
 
@@ -581,6 +604,7 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
         };
     } else {
         instr = "mov";
+        a.s = 0;
     }
 
     switch (a.mod) {
@@ -606,17 +630,6 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
         0b00 => {
             try a.set_effective_address_calc(byte2, bytes);
             a.set_byte_word();
-            if (a.w == 1 and a.s == 0) {
-                a.data = bytes[ip + 3];
-                a.byte_count += 1;
-                a.data = (a.data.? << 8) | bytes[ip + 2];
-                a.byte_count += 1;
-            } else {
-                if (a.data == null) {
-                    a.data = bytes[ip + 2];
-                    a.byte_count += 1;
-                }
-            }
         },
     }
 
@@ -631,10 +644,10 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
     a.full_instr.src_operand = source_operand{ .data = a.data.? };
 
     switch (a.mod) {
-        0b01 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s} [{s} + {d}]", .{ a.byte_word, a.r_m, a.disp_l }),
-        0b10 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s} [{s} + {d}]", .{ a.byte_word, a.r_m, ((a.disp_h << 8) | a.disp_l) }),
-        0b00 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s} [{s}]", .{ a.byte_word, a.r_m }),
-        0b11 => a.full_instr.dest_operand = try std.fmt.bufPrint(&a.buffer, "{s}", .{a.r_m}),
+        0b01 => a.full_instr.dest_operand = try std.fmt.bufPrint(&global_buffer, "{s} [{s} + {d}]", .{ a.byte_word, a.r_m, a.disp_l }),
+        0b10 => a.full_instr.dest_operand = try std.fmt.bufPrint(&global_buffer, "{s} [{s} + {d}]", .{ a.byte_word, a.r_m, ((a.disp_h << 8) | a.disp_l) }),
+        0b00 => a.full_instr.dest_operand = try std.fmt.bufPrint(&global_buffer, "{s} [{s}]", .{ a.byte_word, a.r_m }),
+        0b11 => a.full_instr.dest_operand = try std.fmt.bufPrint(&global_buffer, "{s}", .{a.r_m}),
     }
     ip += a.byte_count;
 }
