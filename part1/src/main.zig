@@ -39,39 +39,22 @@ const cpu_regs = struct {
     map: std.StringHashMap(u16),
 
     fn get(self: *cpu_regs, key: []const u8) !u16 {
-        const parent_register = get_parent_register(key[0]);
-
-        if (key[1] == 'l') {
-            return get_low(self.map.get(parent_register).?);
-        } else if (key[1] == 'h') {
-            return get_high(self.map.get(parent_register).?);
-        } else if (key.len > 2) {
-            const index = try std.fmt.parseInt(u16, key[6 .. key.len - 1], 10);
+        if (key.len > 2) {
+            const index = try self.eval_effective_address_calc(key);
 
             if (std.mem.eql(u8, key[0..4], "word")) {
                 return (@as(u16, memory[index + 1]) << 8) | memory[index];
             } else {
                 return memory[index];
             }
+        } else {
+            return self.get_register_value(key);
         }
-        return self.map.get(key).?;
     }
 
     fn put(self: *cpu_regs, key: []const u8, value: u16) !void {
-        const parent_register = get_parent_register(key[0]);
-
-        if (key[1] == 'l') {
-            var previous_value: u16 = self.map.get(parent_register).?;
-            set_low(&previous_value, value);
-            try self.map.put(parent_register, previous_value);
-            return;
-        } else if (key[1] == 'h') {
-            var previous_value: u16 = self.map.get(parent_register).?;
-            set_high(&previous_value, value);
-            try self.map.put(parent_register, previous_value);
-            return;
-        } else if (key.len > 2) {
-            const index = try std.fmt.parseInt(u16, key[6 .. key.len - 1], 10);
+        if (key.len > 2) {
+            const index = try self.eval_effective_address_calc(key);
 
             if (std.mem.eql(u8, key[0..4], "word")) {
                 memory[index] = get_low(value);
@@ -80,9 +63,54 @@ const cpu_regs = struct {
                 memory[index] = get_low(value);
             }
             return;
+        } else {
+            const parent_register = get_parent_register(key[0]);
+            if (key[1] == 'l') {
+                var previous_value: u16 = self.map.get(parent_register).?;
+                set_low(&previous_value, value);
+                try self.map.put(parent_register, previous_value);
+                return;
+            } else if (key[1] == 'h') {
+                var previous_value: u16 = self.map.get(parent_register).?;
+                set_high(&previous_value, value);
+                try self.map.put(parent_register, previous_value);
+                return;
+            }
+            try self.map.put(key, value);
         }
+    }
 
-        try self.map.put(key, value);
+    fn eval_effective_address_calc(self: *cpu_regs, effective_address_calc: []const u8) !usize {
+        var index: usize = 0;
+        var substrings = std.mem.splitSequence(u8, effective_address_calc[6 .. effective_address_calc.len - 1], " + ");
+
+        while (substrings.next()) |chunk| {
+            var is_numeric: bool = false;
+            for (chunk) |char| {
+                if (char >= '0' and char <= '9') {
+                    is_numeric = true;
+                } else {
+                    is_numeric = false;
+                }
+            }
+
+            if (is_numeric) {
+                index += try std.fmt.parseInt(u16, chunk, 10);
+            } else {
+                index += self.get_register_value(chunk);
+            }
+        }
+        return index;
+    }
+
+    fn get_register_value(self: *cpu_regs, key: []const u8) u16 {
+        const parent_register = get_parent_register(key[0]);
+        if (key[1] == 'l') {
+            return get_low(self.map.get(parent_register).?);
+        } else if (key[1] == 'h') {
+            return get_high(self.map.get(parent_register).?);
+        }
+        return self.map.get(key).?;
     }
 };
 
@@ -142,8 +170,6 @@ const assembly = struct {
                 const value: u16 = (byte4 << 8) | bytes[ip + 2];
                 self.byte_count += 1;
                 self.r_m = try std.fmt.bufPrint(&self.buffer, "{d}", .{value});
-
-                self.set_data(bytes);
             } else {
                 self.r_m = "bp";
             },
@@ -577,10 +603,10 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
         a.full_instr.dest_operand = a.reg;
 
         a.full_instr.src_operand = source_operand{ .reg = switch (a.mod) {
-            0b01 => try std.fmt.bufPrint(&a.buffer, "[{s} + {d}]", .{ a.r_m, a.disp_l }),
-            0b10 => try std.fmt.bufPrint(&a.buffer, "[{s} + {d}]", .{ a.r_m, ((a.disp_h << 8) | a.disp_l) }),
-            0b00 => try std.fmt.bufPrint(&a.buffer, "[{s}]", .{a.r_m}),
-            0b11 => try std.fmt.bufPrint(&a.buffer, "{s}", .{a.r_m}),
+            0b01 => try std.fmt.bufPrint(&global_buffer, "[{s} + {d}]", .{ a.r_m, a.disp_l }),
+            0b10 => try std.fmt.bufPrint(&global_buffer, "[{s} + {d}]", .{ a.r_m, ((a.disp_h << 8) | a.disp_l) }),
+            0b00 => try std.fmt.bufPrint(&global_buffer, "[{s}]", .{a.r_m}),
+            0b11 => try std.fmt.bufPrint(&global_buffer, "{s}", .{a.r_m}),
         } };
     }
     ip += a.byte_count;
@@ -630,6 +656,7 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
         0b00 => {
             try a.set_effective_address_calc(byte2, bytes);
             a.set_byte_word();
+            a.set_data(bytes);
         },
     }
 
