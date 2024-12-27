@@ -81,7 +81,6 @@ const cpu_regs = struct {
     }
 
     fn eval_effective_address_calc(self: *cpu_regs, effective_address_calc: []const u8) !usize {
-        var index: usize = 0;
         var begin: usize = 0;
         for (effective_address_calc, 0..) |char, i| {
             if (char == '[') {
@@ -91,6 +90,7 @@ const cpu_regs = struct {
         }
         var substrings = std.mem.splitSequence(u8, effective_address_calc[begin .. effective_address_calc.len - 1], " + ");
 
+        var index: usize = 0;
         while (substrings.next()) |chunk| {
             var is_numeric: bool = false;
             for (chunk) |char| {
