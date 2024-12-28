@@ -1,6 +1,6 @@
 const std = @import("std");
 var ip: u8 = 0;
-var memory: [1_000_000]u8 = [_]u8{0} ** 1_000_000;
+var memory: [64 * 1024]u8 = [_]u8{0} ** (64 * 1024);
 
 var global_buffer: [1024]u8 = [_]u8{0} ** 1024;
 
@@ -265,13 +265,26 @@ const assembly = struct {
 
 var a: assembly = assembly{};
 pub fn main() !void {
+    var execute: bool = false;
+    var dump: bool = false;
+    var path: []const u8 = undefined;
+
     var args = std.process.args();
     defer args.deinit();
 
     _ = args.skip();
-    const path: ?[]const u8 = args.next();
 
-    var file = try std.fs.cwd().openFile(path.?, .{});
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--exec")) {
+            execute = true;
+        } else if (std.mem.eql(u8, arg, "--dump")) {
+            dump = true;
+        } else {
+            path = arg;
+        }
+    }
+
+    var file = try std.fs.cwd().openFile(path, .{});
     // var file = try std.fs.cwd().openFile("../listing_0051_memory_mov/listing_0051_memory_mov", .{}); //INFO: for debugging
     defer file.close();
 
@@ -338,12 +351,19 @@ pub fn main() !void {
                 }
             },
         }
-        try run_asm(&cpu_register);
+        if (execute) try run_asm(&cpu_register);
         a.clear();
     }
     std.debug.assert(ip == file_size);
     print_hash_map(cpu_register.map);
     std.debug.print("ip: {d}\n", .{ip});
+
+    if (dump) {
+        const picture_file = try std.fs.cwd().createFile("test.data", .{ .read = true });
+        defer picture_file.close();
+
+        try picture_file.writeAll(&memory);
+    }
 }
 
 fn set_hash_map(map: *std.StringHashMap(u16)) !void {
