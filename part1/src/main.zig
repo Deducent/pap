@@ -265,14 +265,14 @@ const assembly = struct {
 
 var a: assembly = assembly{};
 pub fn main() !void {
-    // var args = std.process.args();
-    // defer args.deinit();
-    //
-    // _ = args.skip();
-    // const path: ?[]const u8 = args.next();
-    //
-    // var file = try std.fs.cwd().openFile(path.?, .{});
-    var file = try std.fs.cwd().openFile("../listing_0051_memory_mov/listing_0051_memory_mov", .{}); //INFO: for debugging
+    var args = std.process.args();
+    defer args.deinit();
+
+    _ = args.skip();
+    const path: ?[]const u8 = args.next();
+
+    var file = try std.fs.cwd().openFile(path.?, .{});
+    // var file = try std.fs.cwd().openFile("../listing_0051_memory_mov/listing_0051_memory_mov", .{}); //INFO: for debugging
     defer file.close();
 
     const reader = file.reader();
