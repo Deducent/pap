@@ -3,6 +3,8 @@ var ip: u8 = 0;
 var memory: [64 * 1024]u8 = [_]u8{0} ** (64 * 1024);
 
 var global_buffer: [1024]u8 = [_]u8{0} ** 1024;
+var clocks: u8 = 0;
+var is_clocks: bool = true;
 
 const source_operand = union(enum) {
     reg: []const u8,
@@ -138,6 +140,7 @@ const assembly = struct {
         src_operand: source_operand,
         dest_operand: []const u8,
         ip_inc: i8 = 0,
+        instr_clock: u8 = 0,
     } = .{
         .opcode = undefined,
         .dest_operand = undefined,
@@ -260,12 +263,13 @@ const assembly = struct {
         self.d = undefined;
         self.s = undefined;
         self.w = undefined;
+        self.full_instr.instr_clock = 0;
     }
 };
 
 var a: assembly = assembly{};
 pub fn main() !void {
-    var execute: bool = false;
+    var execute: bool = true;
     var dump: bool = false;
     var path: []const u8 = undefined;
 
@@ -279,13 +283,15 @@ pub fn main() !void {
             execute = true;
         } else if (std.mem.eql(u8, arg, "--dump")) {
             dump = true;
+        } else if (std.mem.eql(u8, arg, "--clocks")) {
+            is_clocks = true;
         } else {
             path = arg;
         }
     }
 
-    var file = try std.fs.cwd().openFile(path, .{});
-    // var file = try std.fs.cwd().openFile("../listing_0051_memory_mov/listing_0051_memory_mov", .{}); //INFO: for debugging
+    // var file = try std.fs.cwd().openFile(path, .{});
+    var file = try std.fs.cwd().openFile("../listing_0056_estimating_cycles/listing_0056_estimating_cycles", .{}); //INFO: for debugging
     defer file.close();
 
     const reader = file.reader();
@@ -307,13 +313,13 @@ pub fn main() !void {
     try set_hash_map(&map);
 
     var cpu_register: cpu_regs = cpu_regs{ .map = map };
-    print_hash_map(cpu_register.map);
+    if (execute) print_hash_map(cpu_register.map);
     while (ip < file_size) {
         switch (bytes[ip] & 0b111111_00) {
-            0b100010_00 => try pattern_register_to_register(bytes, writer, "mov"), // reg -> reg
-            0b000000_00 => try pattern_register_to_register(bytes, writer, "add"), // reg -> reg
-            0b001010_00 => try pattern_register_to_register(bytes, writer, "sub"), // reg -> reg
-            0b001110_00 => try pattern_register_to_register(bytes, writer, "cmp"), // reg -> reg
+            0b100010_00 => try pattern_reg_to_reg_or_mem(bytes, writer, "mov"), // reg -> reg
+            0b000000_00 => try pattern_reg_to_reg_or_mem(bytes, writer, "add"), // reg -> reg
+            0b001010_00 => try pattern_reg_to_reg_or_mem(bytes, writer, "sub"), // reg -> reg
+            0b001110_00 => try pattern_reg_to_reg_or_mem(bytes, writer, "cmp"), // reg -> reg
             0b100000_00 => try pattern_immediate_register_memory(bytes, writer), // reg -> memory
             0b110001_00 => try pattern_immediate_register_memory(bytes, writer),
             0b000001_00 => try pattern_immediate_from_accumalator(bytes, writer, "add"),
@@ -355,7 +361,7 @@ pub fn main() !void {
         a.clear();
     }
     std.debug.assert(ip == file_size);
-    print_hash_map(cpu_register.map);
+    if (execute) print_hash_map(cpu_register.map);
     std.debug.print("ip: {d}\n", .{ip});
 
     if (dump) {
@@ -441,6 +447,11 @@ fn simulate_mov(regs: *cpu_regs) !void {
         },
         .memory => {},
     }
+
+    if (is_clocks) {
+        std.debug.print(" clocks: +{d} = {d} | ", .{ a.full_instr.instr_clock, clocks + a.full_instr.instr_clock });
+        clocks += a.full_instr.instr_clock;
+    }
     std.debug.print(" {s} ({d} -> {d})", .{ dest, try regs.get(dest), new_value });
     std.debug.print(" ip: ({d} -> {d})", .{ ip - a.byte_count, ip });
     try regs.put(dest, new_value);
@@ -462,6 +473,11 @@ fn simulate_add(regs: *cpu_regs) !void {
         },
 
         .memory => |_| {},
+    }
+
+    if (is_clocks) {
+        std.debug.print(" clocks: +{d} = {d} | ", .{ a.full_instr.instr_clock, clocks + a.full_instr.instr_clock });
+        clocks += a.full_instr.instr_clock;
     }
 
     std.debug.print(" {s} ({d} -> {d})", .{ dest, try regs.get(dest), sum });
@@ -569,10 +585,11 @@ fn mov_immediate(bytes: []u8, writer: std.fs.File.Writer) !void {
         .opcode = "mov",
         .src_operand = source_operand{ .data = a.data.? },
         .dest_operand = a.reg,
+        .instr_clock = 4,
     };
 }
 
-fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8) !void {
+fn pattern_reg_to_reg_or_mem(bytes: []u8, writer: std.fs.File.Writer, instr_type: []const u8) !void {
     const byte1 = bytes[ip];
     const byte2 = bytes[ip + 1];
     a.byte_count = 2;
@@ -585,11 +602,23 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
     a.set_register_name(byte2 >> 3, &a.reg);
 
     switch (a.mod) {
-        0b11 => a.set_register_name(byte2, &a.r_m),
+        0b11 => {
+            a.set_register_name(byte2, &a.r_m);
+            if (std.mem.eql(u8, instr_type, "mov")) {
+                a.full_instr.instr_clock += 2;
+            } else if (std.mem.eql(u8, instr_type, "add")) {
+                a.full_instr.instr_clock += 3;
+            } else if (std.mem.eql(u8, instr_type, "sub")) {} else if (std.mem.eql(u8, instr_type, "cmp")) {}
+        },
         0b01 => {
             a.disp_l = bytes[ip + 2];
             a.byte_count += 1;
             try a.set_effective_address_calc(byte2, bytes);
+            if (a.disp_l == 0) {
+                a.full_instr.instr_clock += 5;
+            } else {
+                a.full_instr.instr_clock += 9;
+            }
         },
         0b10 => {
             a.disp_l = bytes[ip + 2];
@@ -597,16 +626,35 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
             a.disp_h = bytes[ip + 3];
             a.byte_count += 1;
             try a.set_effective_address_calc(byte2, bytes);
+            a.full_instr.instr_clock += 9;
         },
-        0b00 => try a.set_effective_address_calc(byte2, bytes),
+        0b00 => {
+            try a.set_effective_address_calc(byte2, bytes);
+            if (a.r_m[0] >= '0' and a.r_m[0] <= '9') {
+                a.full_instr.instr_clock += 6;
+            } else {
+                a.full_instr.instr_clock += 5;
+            }
+        },
     }
 
     if (a.d == 0) {
         switch (a.mod) {
-            0b01 => try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, a.disp_l, a.reg }),
-            0b10 => try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, ((a.disp_h << 8) | a.disp_l), a.reg }),
-            0b00 => try writer.print("{s} [{s}], {s}\n", .{ instr_type, a.r_m, a.reg }),
-            0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, a.r_m, a.reg }),
+            0b01 => {
+                try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, a.disp_l, a.reg });
+                update_clock_reg_to_mem(instr_type);
+            },
+            0b10 => {
+                try writer.print("{s} [{s} + {d}], {s}\n", .{ instr_type, a.r_m, ((a.disp_h << 8) | a.disp_l), a.reg });
+                update_clock_reg_to_mem(instr_type);
+            },
+            0b00 => {
+                try writer.print("{s} [{s}], {s}\n", .{ instr_type, a.r_m, a.reg });
+                update_clock_reg_to_mem(instr_type);
+            },
+            0b11 => {
+                try writer.print("{s} {s}, {s}\n", .{ instr_type, a.r_m, a.reg });
+            },
         }
 
         a.full_instr.opcode = instr_type;
@@ -620,10 +668,21 @@ fn pattern_register_to_register(bytes: []u8, writer: std.fs.File.Writer, instr_t
         }
     } else {
         switch (a.mod) {
-            0b01 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, a.disp_l }),
-            0b10 => try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, ((a.disp_h << 8) | a.disp_l) }),
-            0b00 => try writer.print("{s} {s}, [{s}]\n", .{ instr_type, a.reg, a.r_m }),
-            0b11 => try writer.print("{s} {s}, {s}\n", .{ instr_type, a.reg, a.r_m }),
+            0b01 => {
+                try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, a.disp_l });
+                a.full_instr.instr_clock += 8;
+            },
+            0b10 => {
+                try writer.print("{s} {s}, [{s} + {d}]\n", .{ instr_type, a.reg, a.r_m, ((a.disp_h << 8) | a.disp_l) });
+                a.full_instr.instr_clock += 8;
+            },
+            0b00 => {
+                try writer.print("{s} {s}, [{s}]\n", .{ instr_type, a.reg, a.r_m });
+                a.full_instr.instr_clock += 8;
+            },
+            0b11 => {
+                try writer.print("{s} {s}, {s}\n", .{ instr_type, a.reg, a.r_m });
+            },
         }
 
         a.full_instr.opcode = instr_type;
@@ -664,6 +723,7 @@ fn pattern_immediate_register_memory(bytes: []u8, writer: std.fs.File.Writer) !v
         0b11 => {
             a.set_register_name(byte2, &a.r_m);
             a.set_data(bytes);
+            a.full_instr.instr_clock += 4;
         },
         0b01 => {
             a.disp_l = bytes[ip + 2];
@@ -770,4 +830,11 @@ fn jump_pattern(bytes: []u8, writer: std.fs.File.Writer) !void {
     a.full_instr.ip_inc = @as(i8, @bitCast(ip_inc8));
     a.byte_count = 2;
     ip += a.byte_count;
+}
+fn update_clock_reg_to_mem(instr_type: []const u8) void {
+    if (std.mem.eql(u8, instr_type, "mov")) {
+        a.full_instr.instr_clock += 9;
+    } else if (std.mem.eql(u8, instr_type, "add")) {
+        a.full_instr.instr_clock += 16;
+    } else if (std.mem.eql(u8, instr_type, "sub")) {} else if (std.mem.eql(u8, instr_type, "cmp")) {}
 }
