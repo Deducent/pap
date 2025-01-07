@@ -4,7 +4,7 @@ var memory: [64 * 1024]u8 = [_]u8{0} ** (64 * 1024);
 
 var global_buffer: [1024]u8 = [_]u8{0} ** 1024;
 var clocks: u8 = 0;
-var is_clocks: bool = true;
+var is_clocks: bool = false;
 
 const source_operand = union(enum) {
     reg: []const u8,
@@ -269,7 +269,7 @@ const assembly = struct {
 
 var a: assembly = assembly{};
 pub fn main() !void {
-    var execute: bool = true;
+    var execute: bool = false;
     var dump: bool = false;
     var path: []const u8 = undefined;
 
@@ -290,8 +290,8 @@ pub fn main() !void {
         }
     }
 
-    // var file = try std.fs.cwd().openFile(path, .{});
-    var file = try std.fs.cwd().openFile("../listing_0056_estimating_cycles/listing_0056_estimating_cycles", .{}); //INFO: for debugging
+    var file = try std.fs.cwd().openFile(path, .{});
+    // var file = try std.fs.cwd().openFile("../listing_0056_estimating_cycles/listing_0056_estimating_cycles", .{}); //INFO: for debugging
     defer file.close();
 
     const reader = file.reader();
