@@ -1,5 +1,7 @@
 const std = @import("std");
+const generator = @import("listing_0066_haversine_generator_main.zig");
 const pow = std.math.pow;
+const eql = std.mem.eql;
 
 fn RadiansFromDegrees(degrees: f64) f64 {
     return 0.01745329251994329577 * degrees;
@@ -23,6 +25,41 @@ fn ReferenceHaversine(x0: f64, y0: f64, x1: f64, y1: f64, EarthRadius: f64) f64 
     return EarthRadius * c;
 }
 
+const config = struct {
+    generate: bool = false,
+    cluster: bool = false,
+};
+
+var Config: config = config{};
+
 pub fn main() !void {
-    std.debug.print("{d}\n", .{ReferenceHaversine(20.123489, 39.585689, 124.1892387, 125.189797, 6372.8)});
+    var args = std.process.args();
+    defer args.deinit();
+
+    _ = args.skip();
+
+    while (args.next()) |arg| {
+        std.debug.print("{s}\n", .{arg});
+        if (eql(u8, "--generate", arg)) {
+            Config.generate = true;
+        } else if (eql(u8, "--cluster", arg)) {
+            Config.cluster = true;
+        }
+    }
+
+    std.debug.print("config: {any}", .{Config});
+    std.debug.print("\n", .{});
+    const file = try std.fs.cwd().createFile("data.json", .{ .read = true });
+    defer file.close();
+
+    _ = try file.write(
+        \\{
+        \\  pairs:
+        \\      [
+    );
+
+    _ = try file.write(
+        \\      ]
+        \\}
+    );
 }
