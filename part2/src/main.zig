@@ -9,8 +9,6 @@ fn RadiansFromDegrees(degrees: f64) f64 {
     return 0.01745329251994329577 * degrees;
 }
 
-
-
 /// NOTE(casey): EarthRadius is generally expected to be 6372.8
 fn ReferenceHaversine(x0: f64, y0: f64, x1: f64, y1: f64, EarthRadius: f64) f64 {
     var lat1: f64 = y0;
@@ -23,7 +21,7 @@ fn ReferenceHaversine(x0: f64, y0: f64, x1: f64, y1: f64, EarthRadius: f64) f64 
     lat1 = RadiansFromDegrees(lat1);
     lat2 = RadiansFromDegrees(lat2);
 
-    const a = pow(f64, @sin(dlat / 2.0), 2) +  @cos(lat1) * @cos(lat2) *  pow(f64, @sin(dlon/2), 2);
+    const a = pow(f64, @sin(dlat / 2.0), 2) + @cos(lat1) * @cos(lat2) * pow(f64, @sin(dlon / 2), 2);
     const c = 2.0 * asin(@sqrt(a));
 
     return EarthRadius * c;
@@ -140,14 +138,46 @@ pub fn main() !void {
         \\      [
     );
 
+    var ClusterCountLeft = u64MAX;
     const maxAllowedX: f64 = 180;
     const maxAllowedY: f64 = 90;
+
+    if (Config.cluster) {
+        ClusterCountLeft = 0;
+    } else {
+        std.debug.print("WARNING: Unregcognized method name. Using 'uniform'.\n", .{});
+    }
+
+    const maxPairCount: u35 = (1 << 34);
+
+    if (Config.data_amount >= maxPairCount) {
+        std.debug.print("To avoid accidentally generating massive files, number of pairs must be less than {d}.\n", .{maxPairCount});
+        return;
+    }
+
+    const clusterCountMax = 1 + (Config.data_amount / 64);
+    var xCenter: f64 = 0;
+    var yCenter: f64 = 0;
+    var xRadius: f64 = maxAllowedX;
+    var yRadius: f64 = maxAllowedY;
+
     var sum: f64 = 0;
     for (0..Config.data_amount) |_| {
-        const x1 = RandomDegree(&series, 0, 180, maxAllowedX);
-        const y1 = RandomDegree(&series, 0, 90, maxAllowedY);
-        const x2 = RandomDegree(&series, 0, 180, maxAllowedX);
-        const y2 = RandomDegree(&series, 0, 90, maxAllowedY);
+
+        if (ClusterCountLeft == 0) {
+            ClusterCountLeft = clusterCountMax;
+            xCenter = random_in_range(&series, -maxAllowedX, maxAllowedX);
+            yCenter = random_in_range(&series, -maxAllowedY, maxAllowedY);
+            xRadius = random_in_range(&series, 0, maxAllowedX);
+            yRadius = random_in_range(&series, 0, maxAllowedY);
+        }
+
+        ClusterCountLeft = ClusterCountLeft - 1;
+
+        const x1 = RandomDegree(&series, xCenter, xRadius, maxAllowedX);
+        const y1 = RandomDegree(&series, yCenter, yRadius, maxAllowedY);
+        const x2 = RandomDegree(&series, xCenter, xRadius, maxAllowedX);
+        const y2 = RandomDegree(&series, yCenter, yRadius, maxAllowedY);
         sum += ReferenceHaversine(x1, y1, x2, y2, 6372.8);
         std.debug.print("sum: {d}\n", .{sum});
     }
