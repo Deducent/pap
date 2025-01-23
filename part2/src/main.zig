@@ -162,8 +162,7 @@ pub fn main() !void {
     var yRadius: f64 = maxAllowedY;
 
     var sum: f64 = 0;
-    for (0..Config.data_amount) |_| {
-
+    for (0..Config.data_amount) |i| {
         if (ClusterCountLeft == 0) {
             ClusterCountLeft = clusterCountMax;
             xCenter = random_in_range(&series, -maxAllowedX, maxAllowedX);
@@ -178,16 +177,21 @@ pub fn main() !void {
         const y1 = RandomDegree(&series, yCenter, yRadius, maxAllowedY);
         const x2 = RandomDegree(&series, xCenter, xRadius, maxAllowedX);
         const y2 = RandomDegree(&series, yCenter, yRadius, maxAllowedY);
+        const writer = file.writer();
+        try writer.print(
+            \\ {{"x0": {d}, "y0": {d}, "x1": {d}, "y1": {d}}}
+        , .{ x1, y1, x2, y2 });
+
+        if (i != Config.data_amount - 1) try writer.print(",", .{});
+        try writer.print("\n", .{});
         sum += ReferenceHaversine(x1, y1, x2, y2, 6372.8);
-        std.debug.print("sum: {d}\n", .{sum});
     }
 
     std.debug.print("average haversine {d}\n", .{sum / @as(f64, @floatFromInt(Config.data_amount))});
 
-    // std.debug.print("{d}\n {d}\n {d}\n {d}\n", .{ x1, x2, y1, y2 });
-
     _ = try file.write(
         \\      ]
         \\}
+        \\
     );
 }
