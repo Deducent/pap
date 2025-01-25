@@ -131,6 +131,9 @@ pub fn main() !void {
     const file = try std.fs.cwd().createFile("data.json", .{ .read = true });
     defer file.close();
 
+    const haversineFile= try std.fs.cwd().createFile("haversine.f64", .{ .read = true });
+    defer haversineFile.close();
+
     var series: ranctx = seed(Config.seed);
     _ = try file.write(
         \\{
@@ -184,8 +187,14 @@ pub fn main() !void {
 
         if (i != Config.data_amount - 1) try writer.print(",", .{});
         try writer.print("\n", .{});
-        sum += ReferenceHaversine(x1, y1, x2, y2, 6372.8);
+
+        const haversine = ReferenceHaversine(x1, y1, x2, y2, 6372.8);
+        try haversineFile.writeAll(to_bytes(haversine));
+
+        sum += haversine;
     }
+
+    try haversineFile.writeAll(to_bytes(sum));
 
     std.debug.print("average haversine {d}\n", .{sum / @as(f64, @floatFromInt(Config.data_amount))});
 
@@ -194,4 +203,8 @@ pub fn main() !void {
         \\}
         \\
     );
+}
+
+inline fn to_bytes(num: anytype) []const u8 {
+    return &@as([@sizeOf(@TypeOf(num))]u8, @bitCast(num));
 }
