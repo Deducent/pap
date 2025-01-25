@@ -1,3 +1,4 @@
 **/.zig-cache/
 zig-out/
-**/.idea/
+**/data.json
+**/haversine.f64
