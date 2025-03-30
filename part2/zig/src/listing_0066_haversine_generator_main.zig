@@ -3,7 +3,6 @@ const pow = std.math.pow;
 const eql = std.mem.eql;
 const ReferenceHaversine = @import("haversine_formula.zig").ReferenceHaversine;
 
-
 const config = struct {
     generate: bool = false,
     cluster: bool = false,
@@ -101,14 +100,20 @@ fn RandomDegree(series: *ranctx, center: f64, radius: f64, maxAllowed: f64) f64 
 }
 
 pub fn main() !void {
-    process_args();
+    // process_args();
+    Config = config{
+        .cluster = true,
+        .data_amount = 1,
+        .generate = true,
+        .seed = 1,
+    };
 
     std.debug.print("config: {any}", .{Config});
     std.debug.print("\n", .{});
     const file = try std.fs.cwd().createFile("data.json", .{ .read = true });
     defer file.close();
 
-    const haversineFile= try std.fs.cwd().createFile("haversine.f64", .{ .read = true });
+    const haversineFile = try std.fs.cwd().createFile("haversine.f64", .{ .read = true });
     defer haversineFile.close();
 
     var series: ranctx = seed(Config.seed);
