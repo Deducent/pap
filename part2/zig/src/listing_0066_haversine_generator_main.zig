@@ -119,7 +119,7 @@ pub fn main() !void {
     var series: ranctx = seed(Config.seed);
     _ = try file.write(
         \\{
-        \\  pairs:
+        \\  "pairs":
         \\      [
         \\          
     );

@@ -167,7 +167,7 @@ main :: proc() {
 	assert(err == nil, os.error_string(err))
 
 	_, err = os.write_string(handle, `{
-	pairs:
+	"pairs":
 		[
 			`)
 	assert(err == nil, os.error_string(err))

@@ -50,33 +50,29 @@ parse_list :: proc(tokens: []Token) -> (int, Json_list) {
 	i := 0
 	list: Json_list
 	value: Json_value
+	ok: bool
 
 	token := tokens[i]
 
 	#partial switch (token.type) {
 	case .STRING:
 		value = token.value
-		break
 	case .NUMBER:
-		value, _ = strconv.parse_f64(token.value)
-		break
+		value, ok = strconv.parse_f64(token.value)
+		assert(ok, "invalid number")
 	case .BOOLEAN:
-		value, _ = strconv.parse_bool(token.value)
-		break
+		value, ok = strconv.parse_bool(token.value)
+		assert(ok, "invalid bool")
 	case .CURLY_OPEN:
 		i += 1
-		i, value = parse_object(tokens[i:])
-		break
+		i, value = parse_object(tokens[:], i)
 	case .ARRAY_OPEN:
 		i, value = parse_list(tokens[i:])
-		break
 	// unhandled case
 	case .CURLY_CLOSE:
 		fmt.println("unreachable")
-		break
 	case .ARRAY_CLOSE:
 		fmt.println("unreachable")
-		break
 	}
 	append(&list, value)
 
@@ -84,10 +80,12 @@ parse_list :: proc(tokens: []Token) -> (int, Json_list) {
 }
 
 
-parse_object :: proc(tokens: []Token) -> (int, Json_object) {
-	i := 0
+parse_object :: proc(tokens: []Token, token_index: int) -> (int, Json_object) {
+	i := token_index
 	object: Json_object
 	value: Json_value
+	ok: bool
+	print_tokens(tokens)
 
 	token := tokens[i]
 	assert(token.type == .STRING, "invalid json string key not found")
@@ -98,17 +96,20 @@ parse_object :: proc(tokens: []Token) -> (int, Json_object) {
 	assert(token.type == .COLON, "invalid json colon not found")
 
 	i += 1
+	token = tokens[i]
 
 	#partial switch (token.type) {
 	case .STRING:
 		value = token.value
 	case .NUMBER:
-		value, _ = strconv.parse_f64(token.value)
+		value, ok = strconv.parse_f64(token.value)
+		assert(ok, "invalid number")
 	case .BOOLEAN:
-		value, _ = strconv.parse_bool(token.value)
+		value, ok = strconv.parse_bool(token.value)
+		assert(ok, "invalid bool")
 	case .CURLY_OPEN:
 		i += 1
-		i, value = parse_object(tokens[i:])
+		i, value = parse_object(tokens[:], i)
 
 	case .ARRAY_OPEN:
 		i += 1
@@ -125,15 +126,15 @@ parse_object :: proc(tokens: []Token) -> (int, Json_object) {
 	return i, object
 }
 
-parse :: proc() -> Json_value {
-	tokens: []Token = get_tokens()
+parse :: proc(data: string) -> Json_value {
+	tokens: []Token = get_tokens(data)
 
 	outer_object: Json_object
 	assert(tokens[0].type == .CURLY_OPEN, "invalid json '{' not found ")
 
 	i := 0
 	token: Token
-	for {
+	loop: for {
 		token = tokens[i]
 
 		switch (token.type) {
@@ -144,29 +145,40 @@ parse :: proc() -> Json_value {
 		case .BOOLEAN:
 		case .NULL_TYPE:
 		case .ARRAY_OPEN:
-			continue
+			break loop
 		case .CURLY_OPEN:
 			i += 1
-			i, outer_object = parse_object(tokens[i:])
-
+			i, outer_object = parse_object(tokens[:], i)
+			break loop
 
 		// unhandled case
 		case .CURLY_CLOSE:
 			fmt.println("unreachable")
-			break
+			break loop
 		case .ARRAY_CLOSE:
 			fmt.println("unreachable")
-			break
+			break loop
 		}
 
 	}
 
-	assert(tokens[i].type == .CURLY_CLOSE, "invalid json '}' is missing for closing object")
+	i += 1
+	token = tokens[i]
+
+	assert(token.type == .CURLY_CLOSE, "invalid json '}' is missing for closing object")
 
 	return outer_object
 }
 
 
 main :: proc() {
-	fmt.println(parse())
+	data, ok := os.read_entire_file("./test.json", context.allocator)
+	if !ok {
+		fmt.println("Fail to read!")
+	}
+	defer delete(data, context.allocator)
+
+	parsed := parse(string(data))
+	fmt.println(parsed)
+
 }

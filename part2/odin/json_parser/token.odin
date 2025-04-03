@@ -9,22 +9,15 @@ Token :: struct {
 	type:  Symbols,
 }
 
-get_tokens :: proc() -> []Token {
-	data, ok := os.read_entire_file("./data.json", context.allocator)
-	if !ok {
-		fmt.println("Fail to read!")
-	}
-
-	defer delete(data, context.allocator)
-	file_string := string(data)
-
+get_tokens :: proc(data: string) -> []Token {
 	tokens: [dynamic]Token
 	char: u8 = 0
 	i := 0
+
 	for {
 		token: Token
-		if (i < len(file_string)) {
-			char = file_string[i]
+		if (i < len(data)) {
+			char = data[i]
 		} else {
 			return tokens[:]
 		}
@@ -44,11 +37,10 @@ get_tokens :: proc() -> []Token {
 
 		case char == '"':
 			token.type = Symbols.STRING
-			bytes: [1024]byte
-			builder := strings.builder_from_bytes(bytes[:])
+			builder := strings.builder_make()
 			i += 1
 			for {
-				char = file_string[i]
+				char = data[i]
 				if char != '"' {
 					strings.write_byte(&builder, char)
 					i += 1
@@ -60,10 +52,9 @@ get_tokens :: proc() -> []Token {
 
 		case char == '-' || (char <= '9' && char >= '0'):
 			token.type = Symbols.NUMBER
-			bytes: [1024]byte
-			builder := strings.builder_from_bytes(bytes[:])
+			builder := strings.builder_make()
 			for {
-				char = file_string[i]
+				char = data[i]
 				if (char <= '9' && char >= '0') || char == '.' || char == '-' {
 					strings.write_byte(&builder, char)
 					i += 1
@@ -93,4 +84,10 @@ get_tokens :: proc() -> []Token {
 		append(&tokens, token)
 	}
 
+}
+
+print_tokens :: proc(tokens: []Token) {
+	for token in tokens {
+		fmt.println(token.type, token.value)
+	}
 }
