@@ -23,7 +23,7 @@ get_tokens :: proc(data: string) -> []Token {
 		}
 		defer i += 1
 		switch {
-		case char == ' ' || char == '\n':
+		case char == ' ' || char == '\n' || char == '\t':
 			continue
 		case char == '{':
 			token.type = Symbols.CURLY_OPEN
@@ -87,7 +87,7 @@ get_tokens :: proc(data: string) -> []Token {
 }
 
 print_tokens :: proc(tokens: []Token) {
-	for token in tokens {
-		fmt.println(token.type, token.value)
+	for token, i in tokens {
+		fmt.println(i, token.type, token.value)
 	}
 }
