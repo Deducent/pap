@@ -2,4 +2,5 @@
 zig-out/
 **/data.json
 **/haversine.f64
+**/.uscope
 **/.idea

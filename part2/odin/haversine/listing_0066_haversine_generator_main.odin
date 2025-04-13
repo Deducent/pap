@@ -2,6 +2,7 @@ package haversine
 
 import "core:fmt"
 import "core:os"
+import "core:slice"
 import "core:strconv"
 import "core:strings"
 
@@ -116,6 +117,8 @@ process_args :: proc() -> Config {
 	return config
 }
 
+EARTH_RADIUS :: 6372.8
+
 main :: proc() {
 	// config := process_args()
 	config: Config = {
@@ -188,7 +191,13 @@ main :: proc() {
 		x2 := random_degree(&series, xCenter, xRadius, MAX_ALLOWED_X)
 		y2 := random_degree(&series, yCenter, yRadius, MAX_ALLOWED_Y)
 
-		entry := fmt.aprintf(`{{"x0": %f, "y0": %f, "x1": %f, "y1": %f}}`, x1, y1, x2, y2)
+		entry := fmt.aprintf(
+			`{{"x0": %.16f, "y0": %.16f, "x1": %.16f, "y1": %.16f}}`,
+			x1,
+			y1,
+			x2,
+			y2,
+		)
 		defer delete(entry)
 		fmt.println(entry)
 
@@ -200,8 +209,9 @@ main :: proc() {
 			assert(err == nil, os.error_string(err))
 		}
 
-		haversine := reference_haversine(x1, y1, x2, y2, 6372.8)
-		_, err = os.write_byte(haversine_handle, byte(haversine))
+		haversine := reference_haversine(x1, y1, x2, y2, EARTH_RADIUS)
+		data := slice.to_bytes(slice.from_ptr(&haversine, 1))
+		_, err = os.write(haversine_handle, data)
 		assert(err == nil, os.error_string(err))
 
 		sum += haversine
@@ -212,7 +222,8 @@ main :: proc() {
 }`)
 	assert(err == nil, os.error_string(err))
 
-	_, err = os.write_byte(haversine_handle, byte(sum))
+	data := slice.to_bytes(slice.from_ptr(&sum, 1))
+	_, err = os.write(haversine_handle, data)
 	assert(err == nil, os.error_string(err))
 
 	fmt.printfln("average haversine %f", sum / f64(config.data_amount))
