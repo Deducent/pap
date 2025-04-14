@@ -120,13 +120,15 @@ process_args :: proc() -> Config {
 EARTH_RADIUS :: 6372.8
 
 main :: proc() {
-	// config := process_args()
-	config: Config = {
-		cluster     = true,
-		generate    = true,
-		seed        = 1,
-		data_amount = 1,
-	}
+	config := process_args()
+	// INFO: Debug tools
+	// config: Config = {
+	// 	cluster     = true,
+	// 	generate    = true,
+	// 	seed        = 1,
+	// 	data_amount = 1,
+	// }
+
 	fmt.println(config)
 
 	cluster_count_left: u64 = U64MAX

@@ -7,20 +7,17 @@ import "core:os"
 import "haversine"
 import "json_parser"
 
-
 main :: proc() {
 	data, ok := os.read_entire_file("./haversine/data.json", context.allocator)
 	assert(ok, "Failed to read")
 	defer delete(data, context.allocator)
 
 	parsed := json_parser.parse(string(data))
-	fmt.println(parsed)
 	pairs := parsed.(json_parser.Json_object)["pairs"].(json_parser.Json_list)
 
 	data, ok = os.read_entire_file("./haversine/haversine.f64", context.allocator)
 	assert(ok, "Failed to read")
 	answers_f64 := mem.slice_data_cast([]f64, data)
-	fmt.println(answers_f64)
 
 	sum: f64
 	for pair in pairs {
@@ -32,10 +29,13 @@ main :: proc() {
 
 		sum += haversine.reference_haversine(x0, y0, x1, y1, haversine.EARTH_RADIUS)
 	}
+	pair_count := len(pairs)
 
-	avg := sum / f64(len(pairs))
-	ref_avg := answers_f64[len(pairs)]
+	avg := sum / f64(pair_count)
+	ref_avg := answers_f64[pair_count]
 
-	fmt.println("average: ", avg)
-	fmt.println("difference: ", avg - ref_avg)
+	fmt.println("pair count: ", pair_count)
+	fmt.printfln("haversine average: %.16f", avg)
+	fmt.printfln("reference average: %.16f", avg)
+	fmt.printfln("difference: %.16f", avg - ref_avg)
 }

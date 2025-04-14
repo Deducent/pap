@@ -145,7 +145,8 @@ parse_object :: proc(tokens: []Token, token_index: int) -> (int, Json_object) {
 
 parse :: proc(data: string) -> Json_value {
 	tokens: []Token = get_tokens(data)
-	print_tokens(tokens)
+	// INFO: Debugging
+	// print_tokens(tokens)
 
 	outer_object: Json_object
 	assert(tokens[0].type == .CURLY_OPEN, "invalid json '{' not found ")
