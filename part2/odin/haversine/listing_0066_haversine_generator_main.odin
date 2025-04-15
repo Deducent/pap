@@ -153,6 +153,10 @@ main :: proc() {
 	sum: f64
 	series := seed(config.seed)
 
+	if os.is_file_path("data.json") {
+		os.remove("data.json")
+	}
+
 	handle, err := os.open(
 		"data.json",
 		os.O_WRONLY | os.O_CREATE,
@@ -160,6 +164,11 @@ main :: proc() {
 	)
 	defer os.close(handle)
 	assert(err == nil, os.error_string(err))
+
+
+	if os.is_file_path("haversine.f64") {
+		os.remove("haversine.f64")
+	}
 
 	haversine_handle: os.Handle
 	haversine_handle, err = os.open(
@@ -224,9 +233,10 @@ main :: proc() {
 }`)
 	assert(err == nil, os.error_string(err))
 
-	data := slice.to_bytes(slice.from_ptr(&sum, 1))
+	avg := sum / f64(config.data_amount)
+	data := slice.to_bytes(slice.from_ptr(&avg, 1))
 	_, err = os.write(haversine_handle, data)
 	assert(err == nil, os.error_string(err))
 
-	fmt.printfln("average haversine %f", sum / f64(config.data_amount))
+	fmt.printfln("average haversine %.16f", avg)
 }
