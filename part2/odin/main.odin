@@ -36,6 +36,6 @@ main :: proc() {
 
 	fmt.println("pair count: ", pair_count)
 	fmt.printfln("haversine average: %.16f", avg)
-	fmt.printfln("reference average: %.16f", avg)
+	fmt.printfln("reference average: %.16f", ref_avg)
 	fmt.printfln("difference: %.16f", avg - ref_avg)
 }
