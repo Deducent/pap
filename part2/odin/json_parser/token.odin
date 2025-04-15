@@ -37,29 +37,33 @@ get_tokens :: proc(data: string) -> []Token {
 
 		case char == '"':
 			token.type = Symbols.STRING
-			builder := strings.builder_make()
+			builder := strings.builder_make(context.temp_allocator)
 			i += 1
+			defer strings.builder_destroy(&builder)
 			for {
 				char = data[i]
 				if char != '"' {
 					strings.write_byte(&builder, char)
 					i += 1
 				} else {
-					token.value = strings.to_string(builder)
+					str := strings.to_string(builder)
+					token.value, _ = strings.clone(str)
 					break
 				}
 			}
 
 		case char == '-' || (char <= '9' && char >= '0'):
 			token.type = Symbols.NUMBER
-			builder := strings.builder_make()
+			builder := strings.builder_make(context.temp_allocator)
+			defer strings.builder_destroy(&builder)
 			for {
 				char = data[i]
 				if (char <= '9' && char >= '0') || char == '.' || char == '-' {
 					strings.write_byte(&builder, char)
 					i += 1
 				} else {
-					token.value = strings.to_string(builder)
+					str := strings.to_string(builder)
+					token.value, _ = strings.clone(str)
 					i -= 1
 					break
 				}
