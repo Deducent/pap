@@ -1,0 +1,24 @@
+#! /bin/bash
+
+mkdir -p builds
+
+if [ $# -ne 1 ]; then
+	echo "specify one listing number $#"
+	exit 1
+fi
+
+re='^[0-9]+$'
+if ! [[ $1 =~ $re ]] ; then
+	echo "error: Not a number" >&2; exit 1
+fi
+
+for file in listing*$1*.odin; do
+	buildname="./builds/${file%.*}"
+	if [ -e $buildname ]; then
+		echo $buildname
+		$buildname
+	else
+		echo "$file -> $buildname"
+		odin run $file -file -debug -out:$buildname
+	fi
+done
