@@ -15,7 +15,8 @@ read_os_timer :: proc() -> i64 {
 	return now._nsec
 }
 
-// main :: proc() {
-// 	fmt.println(read_os_timer())
-// 	fmt.println(read_cpu_timer())
-// }
+main :: proc() {
+	fmt.println(read_os_timer())
+	fmt.println(read_cpu_timer())
+	fmt.println(estimate_cpu_freq())
+}
