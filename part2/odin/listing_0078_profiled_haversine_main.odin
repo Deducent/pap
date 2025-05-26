@@ -6,13 +6,13 @@ import "core:os"
 
 import "haversine"
 import "json_parser"
+import "profiler"
 import "timer"
 
-measurements: map[string]i64
 
 main :: proc() {
-	time_function()
-	defer time_function_end()
+	profiler.begin_profile()
+	defer profiler.end_profile()
 
 	data, ok := os.read_entire_file("./haversine/data.json", context.allocator)
 	assert(ok, "Failed to read")
@@ -26,38 +26,31 @@ main :: proc() {
 	answers_f64 := mem.slice_data_cast([]f64, data)
 
 	sum: f64
-	for pair in pairs {
-		object := pair.(json_parser.Json_object)
-		x0 := object["x0"].(f64)
-		y0 := object["y0"].(f64)
-		x1 := object["x1"].(f64)
-		y1 := object["y1"].(f64)
+	{
+		profiler.time_block_start("Sum Loop")
 
-		sum += haversine.reference_haversine(x0, y0, x1, y1, haversine.EARTH_RADIUS)
+		for pair in pairs {
+			object := pair.(json_parser.Json_object)
+			x0 := object["x0"].(f64)
+			y0 := object["y0"].(f64)
+			x1 := object["x1"].(f64)
+			y1 := object["y1"].(f64)
+
+			sum += haversine.reference_haversine(x0, y0, x1, y1, haversine.EARTH_RADIUS)
+		}
+
+		profiler.time_block_end("Sum Loop")
 	}
 	pair_count := len(pairs)
 
 	avg := sum / f64(pair_count)
 	ref_avg := answers_f64[pair_count]
 
+
 	fmt.println("pair count: ", pair_count)
 	fmt.printfln("haversine average: %.16f", avg)
 	fmt.printfln("reference average: %.16f", ref_avg)
 	fmt.printfln("difference: %.16f", avg - ref_avg)
 
-}
-
-time_function :: proc(loc := #caller_location) {
-	start := timer.read_cpu_timer()
-	measurements[loc.procedure] = start
-}
-
-time_function_end :: proc(loc := #caller_location) {
-	start := measurements[loc.procedure]
-	end := timer.read_cpu_timer()
-	result := end - start
-	measurements[loc.procedure] = result
-	for k, v in measurements {
-		fmt.printfln("proc: %s, %d", k, v)
-	}
+	fmt.printfln("Final Result")
 }
