@@ -7,7 +7,6 @@ import "core:os"
 import "haversine"
 import "json_parser"
 import "profiler"
-import "timer"
 
 
 main :: proc() {
@@ -51,6 +50,4 @@ main :: proc() {
 	fmt.printfln("haversine average: %.16f", avg)
 	fmt.printfln("reference average: %.16f", ref_avg)
 	fmt.printfln("difference: %.16f", avg - ref_avg)
-
-	fmt.printfln("Final Result")
 }
