@@ -39,12 +39,8 @@ end_profile :: proc() {
 
 time_block_start :: proc(name: string) {
 	start := timer.read_cpu_timer()
-	info, ok := measurements[name]
-	if !ok {
-		info = Info {
-			duration = start,
-		}
-	}
+	info := measurements[name] or_else Info{}
+	info.duration = start
 	info.call_count += 1
 	measurements[name] = info
 }
