@@ -3,7 +3,7 @@ package profiler
 import "../timer"
 import "core:fmt"
 
-measurements: map[string]Info
+measurements := make(map[string]Info, 4096)
 
 Info :: struct {
 	duration:   i64,
