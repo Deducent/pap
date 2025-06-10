@@ -3,9 +3,15 @@ package profiler
 import "../timer"
 import "core:fmt"
 
-measurements := make(map[string]Info, 4096)
+measurements: #soa[dynamic]Info
+
+@(init)
+startup :: proc() {
+	reserve(&measurements, 4096)
+}
 
 Info :: struct {
+	proc_name:  string,
 	duration:   i64,
 	call_count: int,
 }
@@ -25,34 +31,56 @@ begin_profile :: proc() {
 end_profile :: proc() {
 	time_block_end("total")
 
+	assert(measurements.proc_name[0] == "total")
+
 	fmt.println("\nPROFILING RESULTS")
-	for k, v in measurements {
+	for info in measurements {
 		fmt.printfln(
 			"proc: %s[%d] %d, %.2f%%",
-			k,
-			v.call_count,
-			v.duration,
-			(f64(v.duration) * 100) / f64(measurements["total"].duration),
+			info.proc_name,
+			info.call_count,
+			info.duration,
+			(f64(info.duration) * 100) / f64(measurements.duration[0]),
 		)
 	}
 }
 
 time_block_start :: proc(name: string) {
 	start := timer.read_cpu_timer()
-	info := measurements[name] or_else Info{}
-	info.duration = start
-	info.call_count += 1
-	measurements[name] = info
+
+	idx, found := find(name)
+	if found {
+		info := &measurements[idx]
+		info.duration = start
+		info.call_count += 1
+	} else {
+		info := Info {
+			proc_name = name,
+			duration  = start,
+		}
+		info.call_count += 1
+		append_soa(&measurements, info)
+	}
+}
+
+find :: proc(name: string) -> (idx: int, found: bool) {
+	for &info, i in measurements {
+		if info.proc_name == name {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 time_block_end :: proc(name: string) {
-	assert(name in measurements)
-	info := measurements[name]
+	idx, found := find(name)
+	assert(found)
+
+	info := &measurements[idx]
 
 	start := info.duration
 	end := timer.read_cpu_timer()
 	result := end - start
 
 	info.duration = result
-	measurements[name] = info
 }
