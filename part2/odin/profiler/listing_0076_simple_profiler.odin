@@ -12,6 +12,7 @@ startup :: proc() {
 
 Info :: struct {
 	proc_name:  string,
+	start_tsc:  i64,
 	duration:   i64,
 	call_count: int,
 }
@@ -51,12 +52,12 @@ time_block_start :: proc(name: string) {
 	idx, found := find(name)
 	if found {
 		info := &measurements[idx]
-		info.duration = start
+		info.start_tsc = start
 		info.call_count += 1
 	} else {
 		info := Info {
 			proc_name = name,
-			duration  = start,
+			start_tsc = start,
 		}
 		info.call_count += 1
 		append_soa(&measurements, info)
@@ -64,7 +65,7 @@ time_block_start :: proc(name: string) {
 }
 
 find :: proc(name: string) -> (idx: int, found: bool) {
-	for &info, i in measurements {
+	for info, i in measurements {
 		if info.proc_name == name {
 			return i, true
 		}
@@ -78,9 +79,9 @@ time_block_end :: proc(name: string) {
 
 	info := &measurements[idx]
 
-	start := info.duration
+	start := info.start_tsc
 	end := timer.read_cpu_timer()
 	result := end - start
 
-	info.duration = result
+	info.duration += result
 }
