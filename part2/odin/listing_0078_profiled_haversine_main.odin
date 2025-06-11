@@ -35,7 +35,9 @@ main :: proc() {
 			x1 := object["x1"].(f64)
 			y1 := object["y1"].(f64)
 
+			profiler.time_block_start("h")
 			sum += haversine.reference_haversine(x0, y0, x1, y1, haversine.EARTH_RADIUS)
+			profiler.time_block_end("h")
 		}
 
 		profiler.time_block_end("Sum Loop")
