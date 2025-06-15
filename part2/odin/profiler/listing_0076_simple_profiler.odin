@@ -3,7 +3,7 @@ package profiler
 import "../timer"
 import "core:fmt"
 
-measurements: #soa[dynamic]Info
+measurements: [dynamic]Info
 
 @(init)
 startup :: proc() {
@@ -11,10 +11,11 @@ startup :: proc() {
 }
 
 Info :: struct {
-	proc_name:  string,
-	start_tsc:  i64,
-	duration:   i64,
-	call_count: int,
+	proc_name:    string,
+	start_tsc:    i64,
+	duration:     i64,
+	call_count:   int,
+	parent_index: Maybe(int),
 }
 
 time_function :: proc(loc := #caller_location) {
@@ -30,20 +31,42 @@ begin_profile :: proc() {
 }
 
 end_profile :: proc() {
+	assert(measurements[0].proc_name == "total", "need to call begin_profile() first")
+
 	time_block_end("total")
-
-	assert(measurements.proc_name[0] == "total")
-
 	fmt.println("\nPROFILING RESULTS")
-	for info in measurements {
-		fmt.printfln(
-			"proc: %s[%d] %d, %.2f%%",
-			info.proc_name,
-			info.call_count,
-			info.duration,
-			(f64(info.duration) * 100) / f64(measurements.duration[0]),
-		)
+	for info, idx in measurements {
+
+		nested_block_time: i64
+		for possible_child in measurements[idx:] {
+			if possible_child.parent_index == idx {
+				nested_block_time += possible_child.duration
+			}
+		}
+
+		exclusiv_time := info.duration - nested_block_time
+
+		if nested_block_time > 0 && info.proc_name != "total" { 	// exclusiv_time
+			fmt.printfln(
+				"proc: %s[%d] %d, %.2f%% | exclusive %d, %.2f%% ",
+				info.proc_name,
+				info.call_count,
+				info.duration,
+				(f64(info.duration) * 100) / f64(measurements[0].duration),
+				exclusiv_time,
+				(f64(exclusiv_time) * 100) / f64(measurements[0].duration),
+			)
+		} else {
+			fmt.printfln(
+				"proc: %s[%d] %d, %.2f%%",
+				info.proc_name,
+				info.call_count,
+				info.duration,
+				(f64(info.duration) * 100) / f64(measurements[0].duration),
+			)
+		}
 	}
+	free_all()
 }
 
 time_block_start :: proc(name: string) {
@@ -55,12 +78,24 @@ time_block_start :: proc(name: string) {
 		info.start_tsc = start
 		info.call_count += 1
 	} else {
-		info := Info {
+		new_info := Info {
 			proc_name = name,
 			start_tsc = start,
 		}
-		info.call_count += 1
-		append_soa(&measurements, info)
+		new_info.call_count += 1
+
+		m_len := len(measurements)
+
+		if m_len > 0 {
+			index_previous := m_len - 1
+
+			previous_entry := &measurements[index_previous]
+			if previous_entry.duration == 0 { 	// check if parent or not
+				new_info.parent_index = index_previous
+			}
+		}
+
+		append(&measurements, new_info)
 	}
 }
 
@@ -75,7 +110,7 @@ find :: proc(name: string) -> (idx: int, found: bool) {
 
 time_block_end :: proc(name: string) {
 	idx, found := find(name)
-	assert(found)
+	assert(found, "not found entry")
 
 	info := &measurements[idx]
 
