@@ -38,9 +38,9 @@ end_profile :: proc() {
 	fmt.println("\nPROFILING RESULTS")
 	for info, idx in measurements {
 
-		exclusiv_time := info.duration - info.children_duration
-
 		if info.children_duration > 0 && info.proc_name != "total" { 	// exclusiv_time
+			exclusiv_time := info.duration - info.children_duration
+
 			fmt.printfln(
 				"proc: %s[%d] %d, %.2f%% with children | %d, %.2f%% without children",
 				info.proc_name,
