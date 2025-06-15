@@ -11,11 +11,11 @@ startup :: proc() {
 }
 
 Info :: struct {
-	proc_name:    string,
-	start_tsc:    i64,
-	duration:     i64,
-	call_count:   int,
-	parent_index: Maybe(int),
+	proc_name:         string,
+	start_tsc:         i64,
+	duration:          i64,
+	children_duration: i64,
+	call_count:        int,
 }
 
 time_function :: proc(loc := #caller_location) {
@@ -34,21 +34,15 @@ end_profile :: proc() {
 	assert(measurements[0].proc_name == "total", "need to call begin_profile() first")
 
 	time_block_end("total")
+
 	fmt.println("\nPROFILING RESULTS")
 	for info, idx in measurements {
 
-		nested_block_time: i64
-		for possible_child in measurements[idx:] {
-			if possible_child.parent_index == idx {
-				nested_block_time += possible_child.duration
-			}
-		}
+		exclusiv_time := info.duration - info.children_duration
 
-		exclusiv_time := info.duration - nested_block_time
-
-		if nested_block_time > 0 && info.proc_name != "total" { 	// exclusiv_time
+		if info.children_duration > 0 && info.proc_name != "total" { 	// exclusiv_time
 			fmt.printfln(
-				"proc: %s[%d] %d, %.2f%% | exclusive %d, %.2f%% ",
+				"proc: %s[%d] %d, %.2f%% with children | %d, %.2f%% without children",
 				info.proc_name,
 				info.call_count,
 				info.duration,
@@ -66,7 +60,6 @@ end_profile :: proc() {
 			)
 		}
 	}
-	free_all()
 }
 
 time_block_start :: proc(name: string) {
@@ -83,17 +76,6 @@ time_block_start :: proc(name: string) {
 			start_tsc = start,
 		}
 		new_info.call_count += 1
-
-		m_len := len(measurements)
-
-		if m_len > 0 {
-			index_previous := m_len - 1
-
-			previous_entry := &measurements[index_previous]
-			if previous_entry.duration == 0 { 	// check if parent or not
-				new_info.parent_index = index_previous
-			}
-		}
 
 		append(&measurements, new_info)
 	}
@@ -119,4 +101,12 @@ time_block_end :: proc(name: string) {
 	result := end - start
 
 	info.duration += result
+
+	if idx != 0 {
+		index_previous := idx - 1
+		previous_entry := &measurements[index_previous]
+		if previous_entry.duration == 0 { 	// check if parent or not
+			previous_entry.children_duration = info.duration
+		}
+	}
 }
