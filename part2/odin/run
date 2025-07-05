@@ -1,7 +1,5 @@
 #! /bin/bash
 
-mkdir -p builds
-
 re='^[0-9]+$'
 if ! [[ $1 =~ $re ]] ; then
 	echo "error: first Not a number" >&2; exit 1
@@ -15,14 +13,18 @@ for a in "$@"; do
 	args+=" ${a}"
 done
 
-for file in listing*$1*.odin; do
-	buildname="./builds/${file%.*}"
-	if [ -e $buildname ]; then
-		command="${buildname} ${args}"
-		echo $command
-		$command
-	else
-		echo "$file -> $buildname"
-		odin run $file -file -debug -out:$buildname
+for dir in listing*$1*; do
+  echo $dir
+  cd $dir
+  exe="a.out"
+  pwd
+
+	if [ ! -f exe ]; then
+	  odin build . -debug -out:a.out
 	fi
+
+	command="./${exe} ${args}"
+  echo $command
+  $command
+	cd -
 done

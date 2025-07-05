@@ -3,8 +3,8 @@ zig-out/
 **/data.json
 **/haversine.f64
 **/.uscope
-**/.idea
-**/builds
+**/.idea/*
+**/a.out
 **/haversine/haversine
 **/json_parser/json_parser
 **/timer/timer
