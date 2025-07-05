@@ -1,14 +1,8 @@
 package profiler
 
 import "../timer"
+import sa "core:container/small_array"
 import "core:fmt"
-
-measurements: [dynamic]Info
-
-@(init)
-startup :: proc() {
-	reserve(&measurements, 4096)
-}
 
 Info :: struct {
 	proc_name:         string,
@@ -17,6 +11,8 @@ Info :: struct {
 	children_duration: i64,
 	call_count:        int,
 }
+
+infos: sa.Small_Array(10, Info)
 
 time_function :: proc(loc := #caller_location) {
 	time_block_start(loc.procedure)
@@ -31,12 +27,14 @@ begin_profile :: proc() {
 }
 
 end_profile :: proc() {
+	measurements := infos.data[:]
 	assert(measurements[0].proc_name == "total", "need to call begin_profile() first")
 
 	time_block_end("total")
 
 	fmt.println("\nPROFILING RESULTS")
-	for info, idx in measurements {
+	for idx in 0 ..< infos.len {
+		info := infos.data[idx]
 
 		if info.children_duration > 0 && info.proc_name != "total" { 	// exclusiv_time
 			exclusiv_time := info.duration - info.children_duration
@@ -67,7 +65,7 @@ time_block_start :: proc(name: string) {
 
 	idx, found := find(name)
 	if found {
-		info := &measurements[idx]
+		info := &infos.data[idx]
 		info.start_tsc = start
 		info.call_count += 1
 	} else {
@@ -77,14 +75,15 @@ time_block_start :: proc(name: string) {
 		}
 		new_info.call_count += 1
 
-		append(&measurements, new_info)
+		sa.append(&infos, new_info)
 	}
 }
 
 find :: proc(name: string) -> (idx: int, found: bool) {
-	for info, i in measurements {
+	for idx in 0 ..< infos.len {
+		info := infos.data[idx]
 		if info.proc_name == name {
-			return i, true
+			return idx, true
 		}
 	}
 	return 0, false
@@ -94,7 +93,7 @@ time_block_end :: proc(name: string) {
 	idx, found := find(name)
 	assert(found, "not found entry")
 
-	info := &measurements[idx]
+	info := &infos.data[idx]
 
 	start := info.start_tsc
 	end := timer.read_cpu_timer()
@@ -104,7 +103,7 @@ time_block_end :: proc(name: string) {
 
 	if idx != 0 {
 		index_previous := idx - 1
-		previous_entry := &measurements[index_previous]
+		previous_entry := &infos.data[index_previous]
 		if previous_entry.duration == 0 { 	// check if parent or not
 			previous_entry.children_duration = info.duration
 		}
