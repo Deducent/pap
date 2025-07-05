@@ -61,9 +61,8 @@ end_profile :: proc() {
 }
 
 time_block_start :: proc(name: string) {
+	idx, _, found := find(name)
 	start := timer.read_cpu_timer()
-
-	idx, found := find(name)
 	if found {
 		info := &infos.data[idx]
 		info.start_tsc = start
@@ -79,33 +78,35 @@ time_block_start :: proc(name: string) {
 	}
 }
 
-find :: proc(name: string) -> (idx: int, found: bool) {
+find :: proc(name: string) -> (idx: int, parent_idx: int, found: bool) {
 	for idx in 0 ..< infos.len {
 		info := infos.data[idx]
+
+		if info.duration == 0 && info.proc_name != name {
+			parent_idx = idx
+		}
+
 		if info.proc_name == name {
-			return idx, true
+			return idx, parent_idx, true
 		}
 	}
-	return 0, false
+	return 0, parent_idx, false
 }
 
 time_block_end :: proc(name: string) {
-	idx, found := find(name)
+	end := timer.read_cpu_timer()
+	idx, parent_idx, found := find(name)
 	assert(found, "not found entry")
 
 	info := &infos.data[idx]
 
 	start := info.start_tsc
-	end := timer.read_cpu_timer()
 	result := end - start
 
 	info.duration += result
 
 	if idx != 0 {
-		index_previous := idx - 1
-		previous_entry := &infos.data[index_previous]
-		if previous_entry.duration == 0 { 	// check if parent or not
-			previous_entry.children_duration = info.duration
-		}
+		parent_info := &infos.data[parent_idx]
+		parent_info.children_duration += result
 	}
 }

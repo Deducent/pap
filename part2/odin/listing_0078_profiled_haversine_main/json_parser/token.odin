@@ -1,5 +1,6 @@
 package json_parser
 
+import p "../profiler"
 import "core:fmt"
 import "core:os"
 import "core:strings"
@@ -10,6 +11,8 @@ Token :: struct {
 }
 
 get_tokens :: proc(data: string) -> []Token {
+	p.time_function()
+	defer p.time_function_end()
 	tokens: [dynamic]Token
 	char: u8 = 0
 	i := 0

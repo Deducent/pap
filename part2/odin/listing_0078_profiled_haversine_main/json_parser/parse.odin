@@ -1,5 +1,6 @@
 package json_parser
 
+import p "../profiler"
 import "core:fmt"
 import "core:os"
 import "core:strconv"
@@ -91,6 +92,8 @@ parse_list :: proc(tokens: []Token, token_index: int) -> (int, Json_list) {
 
 
 parse_object :: proc(tokens: []Token, token_index: int) -> (int, Json_object) {
+	// p.time_function()
+	// defer p.time_function_end()
 	i := token_index
 	token: Token
 	object: Json_object
@@ -144,6 +147,9 @@ parse_object :: proc(tokens: []Token, token_index: int) -> (int, Json_object) {
 }
 
 parse :: proc(data: string) -> Json_value {
+	p.time_function()
+	defer p.time_function_end()
+
 	tokens: []Token = get_tokens(data)
 	// INFO: Debugging
 	// print_tokens(tokens)
@@ -154,7 +160,9 @@ parse :: proc(data: string) -> Json_value {
 	i := 0
 	token: Token
 
+	p.time_block_start("p")
 	i, outer_object = parse_object(tokens[:], i)
+	p.time_block_end("p")
 
 	token = tokens[i]
 
