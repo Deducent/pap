@@ -10,7 +10,10 @@ Info :: struct {
 	duration:          i64,
 	children_duration: i64,
 	call_count:        int,
+	parent_idx:        int,
 }
+
+global_parent_idx: int
 
 infos: sa.Small_Array(10, Info)
 
@@ -61,41 +64,42 @@ end_profile :: proc() {
 }
 
 time_block_start :: proc(name: string) {
-	idx, _, found := find(name)
+	idx, found := find(name)
 	start := timer.read_cpu_timer()
 	if found {
 		info := &infos.data[idx]
 		info.start_tsc = start
 		info.call_count += 1
+		info.parent_idx = global_parent_idx
+		global_parent_idx = idx
 	} else {
 		new_info := Info {
-			proc_name = name,
-			start_tsc = start,
+			proc_name  = name,
+			start_tsc  = start,
+			parent_idx = global_parent_idx,
 		}
 		new_info.call_count += 1
 
 		sa.append(&infos, new_info)
+
+		global_parent_idx = infos.len - 1
 	}
 }
 
-find :: proc(name: string) -> (idx: int, parent_idx: int, found: bool) {
+find :: proc(name: string) -> (idx: int, found: bool) {
 	for idx in 0 ..< infos.len {
 		info := infos.data[idx]
 
-		if info.duration == 0 && info.proc_name != name {
-			parent_idx = idx
-		}
-
 		if info.proc_name == name {
-			return idx, parent_idx, true
+			return idx, true
 		}
 	}
-	return 0, parent_idx, false
+	return 0, false
 }
 
 time_block_end :: proc(name: string) {
 	end := timer.read_cpu_timer()
-	idx, parent_idx, found := find(name)
+	idx, found := find(name)
 	assert(found, "not found entry")
 
 	info := &infos.data[idx]
@@ -106,7 +110,8 @@ time_block_end :: proc(name: string) {
 	info.duration += result
 
 	if idx != 0 {
-		parent_info := &infos.data[parent_idx]
+		parent_info := &infos.data[info.parent_idx]
 		parent_info.children_duration += result
 	}
+	global_parent_idx = info.parent_idx
 }
