@@ -48,6 +48,8 @@ to_string :: proc() {
 }
 
 parse_list :: proc(tokens: []Token, token_index: int) -> (int, Json_list) {
+	p.time_function()
+	defer p.time_function_end()
 	i := token_index
 	list: Json_list
 	value: Json_value
@@ -92,8 +94,8 @@ parse_list :: proc(tokens: []Token, token_index: int) -> (int, Json_list) {
 
 
 parse_object :: proc(tokens: []Token, token_index: int) -> (int, Json_object) {
-	// p.time_function()
-	// defer p.time_function_end()
+	p.time_function()
+	defer p.time_function_end()
 	i := token_index
 	token: Token
 	object: Json_object
@@ -127,7 +129,9 @@ parse_object :: proc(tokens: []Token, token_index: int) -> (int, Json_object) {
 			i, value = parse_object(tokens[:], i)
 
 		case .ARRAY_OPEN:
+			// p.time_block_start("pl")
 			i, value = parse_list(tokens[:], i)
+		// p.time_block_end("pl")
 		}
 
 		i += 1
@@ -160,9 +164,9 @@ parse :: proc(data: string) -> Json_value {
 	i := 0
 	token: Token
 
-	p.time_block_start("p")
+	// p.time_block_start("p")
 	i, outer_object = parse_object(tokens[:], i)
-	p.time_block_end("p")
+	// p.time_block_end("p")
 
 	token = tokens[i]
 
