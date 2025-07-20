@@ -59,13 +59,26 @@ end_profile :: proc() {
 				(f64(exclusiv_time) * 100) / total_duration,
 			)
 		} else {
-			fmt.printfln(
-				"proc: %s[%d] %d, %.2f%%",
-				info.proc_name,
-				info.call_count,
-				info.root_duration,
-				(f64(info.root_duration) * 100) / total_duration,
-			)
+			if info.proc_name == "total" {
+				CPU_FREQ := timer.estimate_cpu_freq()
+				fmt.printfln(
+					"%s[%d] %d, %.2f%% | CPU FREQ (%d) | time: %.9f s",
+					info.proc_name,
+					info.call_count,
+					info.root_duration,
+					(f64(info.root_duration) * 100) / total_duration,
+					CPU_FREQ,
+					f64(info.root_duration) / f64(CPU_FREQ),
+				)
+			} else {
+				fmt.printfln(
+					"proc: %s[%d] %d, %.2f%%",
+					info.proc_name,
+					info.call_count,
+					info.root_duration,
+					(f64(info.root_duration) * 100) / total_duration,
+				)
+			}
 		}
 	}
 }
