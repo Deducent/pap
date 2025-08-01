@@ -1,0 +1,30 @@
+#! /bin/bash
+
+re='^[0-9]+$'
+if ! [[ $1 =~ $re ]] ; then
+	echo "error: first Not a number" >&2; exit 1
+fi
+
+args=""
+for a in "$@"; do
+	if [ $a -eq $1 ]; then
+		continue
+	fi
+	args+=" ${a}"
+done
+
+for dir in listing*$1*; do
+  echo $dir
+  cd $dir
+  exe="a.out"
+  pwd
+
+	if [ ! -f exe ]; then
+	  odin build . -debug -out:a.out
+	fi
+
+	command="./${exe} ${args}"
+  echo $command
+  $command
+	cd -
+done

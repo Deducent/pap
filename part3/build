@@ -1,0 +1,24 @@
+#! /bin/bash
+
+if [ "$#" -gt 1 ] && [ $# -ne 0 ]; then
+	echo "too many args just give the listing number $#"
+	exit 1
+fi
+
+if  [ $# -eq 0 ]; then
+  for dir in listing*; do
+    echo $dir
+    cd $dir
+	  odin build . -debug -out:a.out
+	  cd -
+	done
+else
+	re='^[0-9]+$'
+	if ! [[ $1 =~ $re ]] ; then
+		echo "error: Not a number" >&2; exit 1
+	fi
+	cd listing*$1*
+	echo listing*$1*
+	odin build . -debug -out:a.out
+	cd -
+fi
