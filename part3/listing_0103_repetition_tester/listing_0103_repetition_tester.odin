@@ -6,54 +6,63 @@ import "core:os"
 import "core:simd/x86"
 import "core:time"
 
+Test :: struct {
+	label: string,
+	func:  proc(tester: ^repetition_tester, file_name: string),
+}
+
+tests := [?]Test {
+	{label = "read_entire_file_from_filename", func = read_entire_file_with_filename_test},
+	{label = "read_entire_file_from_handle_or_err", func = read_entire_file_with_filename_test},
+}
+
 main :: proc() {
-	{
-		tester := initialize_tester()
+	file := "../listing_0101_read_bandwidth_main/haversine/data.json"
 
-		data: []byte
-		ok: bool
+	for test in tests {
+		fmt.printfln("Test : %s", test.label)
+		tester := initialize_tester(file)
 
-		for is_testing(tester) {
-
-			begin_time(&tester)
-
-			data, ok = os.read_entire_file_from_filename(
-				"../listing_0101_read_bandwidth_main/haversine/data.json",
-			)
-
-			tester.process_byte_count = len(data)
-			end_time(&tester)
-
-			assert(ok, "failed to read the file")
-			delete(data, context.allocator)
-
-		}
-		print_results(tester)
+		test.func(&tester, file)
 	}
+}
 
-	{
-		tester := initialize_tester()
+read_entire_file_with_filename_test :: proc(tester: ^repetition_tester, file_name: string) {
+	for is_testing(tester^) {
 
-		data: []byte
-		err: os.Error
+		begin_time(tester)
 
-		for is_testing(tester) {
+		data, ok := os.read_entire_file_from_filename(
+			"../listing_0101_read_bandwidth_main/haversine/data.json",
+		)
 
-			file_data, miss := os.open("../listing_0101_read_bandwidth_main/haversine/data.json")
-			assert(miss == nil, "failed to open the file")
-			defer os.close(file_data)
+		tester.process_byte_count = len(data)
+		end_time(tester)
 
-			begin_time(&tester)
+		assert(ok, "failed to read the file")
+		delete(data, context.allocator)
 
-			data, err = os.read_entire_file_from_handle_or_err(file_data)
-			tester.process_byte_count = len(data)
-
-			end_time(&tester)
-
-			assert(err == nil, "failed to read the file")
-			delete(data, context.allocator)
-
-		}
-		print_results(tester)
 	}
+	print_results(tester^)
+}
+
+read_entire_file_with_handle_test :: proc(tester: ^repetition_tester, file_name: string) {
+	for is_testing(tester^) {
+
+		file_handle, miss := os.open(file_name)
+		assert(miss == nil, "failed to open the file")
+		defer os.close(file_handle)
+
+		begin_time(tester)
+
+		data, err := os.read_entire_file_from_handle_or_err(file_handle)
+		tester.process_byte_count = len(data)
+
+		end_time(tester)
+
+		assert(err == nil, "failed to read the file")
+		delete(data, context.allocator)
+
+	}
+	print_results(tester^)
 }

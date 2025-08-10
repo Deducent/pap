@@ -35,19 +35,30 @@ repetition_tester :: struct {
 	timer_start:        i64,
 	timer_limit_in_s:   i64,
 	start_cycle:        u64,
+	target_byte_count:  int,
 	process_byte_count: int,
 	open_block_count:   u64,
 	end_block_count:    u64,
 	results:            repetition_test_results,
 }
 
-initialize_tester :: proc(time_limit_in_s: i64 = 10) -> (tester: repetition_tester) {
+initialize_tester :: proc(
+	file_name: string,
+	time_limit_in_s: i64 = 10,
+) -> (
+	tester: repetition_tester,
+) {
 	tester = repetition_tester {
 		timer_start = time.now()._nsec,
 		timer_limit_in_s = time_limit_in_s,
 		cpu_freq = get_CPU_Freq(),
 		results = {min = (1 << 64) - 1},
 	}
+
+	file_info, err := os.stat(file_name)
+	assert(err == nil, "failed to get file stats")
+	tester.target_byte_count = int(file_info.size)
+
 	fmt.printfln("CPU-FREQ: %d", tester.cpu_freq)
 	return tester
 }
@@ -61,7 +72,7 @@ end_time :: proc(tester: ^repetition_tester) {
 	end_cycle := x86._rdtsc()
 	tester.end_block_count += 1
 
-	assert(tester.process_byte_count > 0, "no data been processed")
+	assert(tester.process_byte_count == tester.target_byte_count, "no data been processed")
 	assert(
 		tester.open_block_count == tester.end_block_count,
 		"unbalanced begin_time and end_time need to be called balanced",
