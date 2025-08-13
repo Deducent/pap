@@ -271,7 +271,7 @@ var a: assembly = assembly{};
 pub fn main() !void {
     var execute: bool = false;
     var dump: bool = false;
-    var path: []const u8 = undefined;
+    var path: []const u8 = "";
 
     var args = std.process.args();
     defer args.deinit();
@@ -288,6 +288,19 @@ pub fn main() !void {
         } else {
             path = arg;
         }
+    }
+
+    if (std.mem.eql(u8, path, "")) {
+        std.debug.print(
+            \\ Average bad Assembly Decoder and Simulator
+            \\
+            \\ --exec to simulate the assembly
+            \\ --dump to the memory, which is an array of bytes into a test.data file, which stores the array of bytes
+            \\ --clocks to print out how many clock cycles happened for every instruction based on the manuel of the intel 8086
+            \\ ./path to assembled .asm file
+            \\
+        , .{});
+        std.posix.exit(1);
     }
 
     var file = try std.fs.cwd().openFile(path, .{});
