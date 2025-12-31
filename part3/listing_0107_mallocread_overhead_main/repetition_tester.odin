@@ -3,7 +3,6 @@ package tester
 import "base:runtime"
 import "core:fmt"
 import "core:mem"
-import "core:os"
 import "core:simd/x86"
 import "core:time"
 
@@ -97,11 +96,14 @@ begin_time :: proc(tester: ^repetition_tester) {
 	tester.open_block_count += 1
 }
 
-end_time :: proc(tester: ^repetition_tester) {
+end_time :: proc(tester: ^repetition_tester, loc := #caller_location) {
 	end_cycle := x86._rdtsc()
 	tester.end_block_count += 1
 
-	assert(tester.process_byte_count == tester.target_byte_count, "no data been processed")
+	assert(
+		tester.process_byte_count == tester.target_byte_count,
+		fmt.tprint("no data been processed %s", loc.procedure),
+	)
 	assert(
 		tester.open_block_count == tester.end_block_count,
 		"unbalanced begin_time and end_time need to be called balanced",
