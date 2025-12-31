@@ -17,6 +17,25 @@ tests := [?]Test {
 	{label = "read_entire_file_with_libc", func = read_entire_file_with_libc},
 }
 
+run_tests :: proc(names: []string, buf: []byte, cpu_freq: u64, file: string, size: int) {
+	for name in names {
+
+		a: allocation_type
+		switch (name) {
+		case "NONE":
+			a = .NONE
+		case "ALLOC":
+			a = .ALLOC
+		}
+
+		for test in tests {
+			fmt.printfln("Test : %s + %s", test.label, name)
+			tester := initialize_tester(size, a, buf, cpu_freq)
+			test.func(&tester, file)
+		}
+	}
+}
+
 main :: proc() {
 	file := "../listing_0101_read_bandwidth_main/haversine/data.json"
 	infinite: bool
@@ -43,40 +62,10 @@ main :: proc() {
 
 	if infinite {
 		for {
-			for name in names {
-
-				a: allocation_type
-				switch (name) {
-				case "NONE":
-					a = .NONE
-				case "ALLOC":
-					a = .ALLOC
-				}
-
-				for test in tests {
-					fmt.printfln("Test : %s + %s", test.label, name)
-					tester := initialize_tester(size, a, buf, cpu_freq)
-					test.func(&tester, file)
-				}
-			}
+			run_tests(names, buf, cpu_freq, file, size)
 		}
 	} else {
-		for name in names {
-
-			a: allocation_type
-			switch (name) {
-			case "NONE":
-				a = .NONE
-			case "ALLOC":
-				a = .ALLOC
-			}
-
-			for test in tests {
-				fmt.printfln("Test : %s + %s", test.label, name)
-				tester := initialize_tester(size, a, buf, cpu_freq)
-				test.func(&tester, file)
-			}
-		}
+		run_tests(names, buf, cpu_freq, file, size)
 	}
 }
 
