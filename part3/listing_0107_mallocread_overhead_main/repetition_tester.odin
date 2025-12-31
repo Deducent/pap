@@ -48,42 +48,48 @@ repetition_tester :: struct {
 	results:            repetition_test_results,
 	alloc_type:         allocation_type,
 	dest_buffer:        []byte,
+	default_buffer:     []byte,
 }
 
 initialize_tester :: proc(
-	file_name: string,
-	time_limit_in_s: i64 = 10,
+	target_size: int,
 	all_type: allocation_type,
+	default_buf: []byte,
+	cpu_freq: u64,
+	time_limit_in_s: i64 = 10,
 ) -> (
 	tester: repetition_tester,
 ) {
 	tester = repetition_tester {
 		timer_start = time.now()._nsec,
 		timer_limit_in_s = time_limit_in_s,
-		cpu_freq = get_CPU_Freq(),
+		cpu_freq = cpu_freq,
 		results = {min = (1 << 64) - 1},
 		alloc_type = all_type,
+		default_buffer = default_buf,
+		target_byte_count = target_size,
 	}
-
-	file_info, err := os.stat(file_name)
-	assert(err == nil, "failed to get file stats")
-	tester.target_byte_count = int(file_info.size)
 
 	fmt.printfln("CPU-FREQ: %d", tester.cpu_freq)
 	return tester
 }
 
-handle_allocation :: proc(tester: repetition_tester) {
+handle_allocation :: proc(tester: ^repetition_tester) {
 	switch tester.alloc_type {
 	case .NONE:
-
+		tester.dest_buffer = tester.default_buffer
 	case .ALLOC:
-		context.allocator = runtime.default_allocator()
+		tester.dest_buffer = make([]byte, tester.target_byte_count, context.allocator)
 	}
 }
 
-handle_deallocation :: proc(tester: repetition_tester) {
-
+handle_deallocation :: proc(tester: ^repetition_tester) {
+	switch tester.alloc_type {
+	case .NONE:
+		mem.zero_slice(tester.default_buffer)
+	case .ALLOC:
+		delete(tester.dest_buffer, context.allocator)
+	}
 }
 
 begin_time :: proc(tester: ^repetition_tester) {
