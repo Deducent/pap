@@ -3,8 +3,7 @@ package timer
 import "core:fmt"
 
 estimate_cpu_freq :: proc() -> i64 {
-	milisecond_to_wait: i64 = 1000
-	os_wait_time := OS_TIME_FREQ * milisecond_to_wait / 1000
+	os_wait_time: i64 = OS_TIME_FREQ * 3
 
 	os_start := read_os_timer()
 	os_end: i64
